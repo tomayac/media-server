@@ -87,7 +87,10 @@ function search(req, res, next) {
     if (message) {
       message = message.replace(/[\n\r\t]/g, ' ').replace(/\s+/g, ' ');
       message = message.replace('&quot;', '\"');      
-      message = message.replace('&amp;', '&');      
+      message = message.replace('&apos;', '\'');      
+      message = message.replace('&amp;', '&');  
+      message = message.replace('&gt;', '>');  
+      message = message.replace('&lt;', '<');  
       var cleanMessage = message.replace(GLOBAL_config.URL_REGEX, ' ');      
       cleanMessage = cleanMessage.replace(GLOBAL_config.HASHTAG_REGEX, ' $2');
       cleanMessage = cleanMessage.replace(GLOBAL_config.USER_REGEX, ' $2');
@@ -97,7 +100,9 @@ function search(req, res, next) {
       var result = [];
       for (i in taggedWords) {
         var taggedWord = taggedWords[i];
-        if (taggedWord[1].startsWith('NN')) {
+        if ((taggedWord[1] === 'NNS') ||
+            (taggedWord[1] === 'NNPS') ||
+            (taggedWord[1] === 'NNP')) {
           var word = taggedWord[0];
           var tag = taggedWord[2];
           result.push({
@@ -105,33 +110,110 @@ function search(req, res, next) {
             tag: tag
           });
         }
-      }
+      }            
       return {
         text: message,
+        clean: cleanMessage,
         nouns: result         
       };          
     }
-  }  
+  }
   
   /**
-   * Sends the results back to the server
+   * Annotates messages with DBpedia Spotlight
+   */  
+  function spotlight(json) {
+    var text = '';
+    for (var i = 0, len = json.length; i < len; i++) {
+      var item = json[i];
+      text += item.message.clean;
+      item.entities = {};
+    }            
+    var currentService = 'spotlight';
+    var params = {
+      confidence: 0.2,
+      support: 20,
+      text:	text
+    };
+    params = querystring.stringify(params);
+    var options = {
+      host: 'spotlight.dbpedia.org',
+      port: 80,
+      path: '/rest/annotate?' + params,
+      headers: {Accept: 'application/json'}     
+    };
+    var entities = [];      	    
+    http.get(options, function(res) {        
+      var response = '';
+      res.on('data', function(chunk) {
+        response += chunk;
+      });
+      res.on('end', function() {          
+        try {
+          response = JSON.parse(response);
+        } catch(e) {
+          // error
+          sendResults(json);
+          return;
+        }                    
+        if (response.Error || !response.Resources) {
+          // error
+          sendResults(json);
+          return;
+        }
+        if (response.Resources) {
+          var uris = {};
+          for (var i = 0, len = response.Resources.length; i < len; i++) {
+            var entity = response.Resources[i];              
+            // the value of entity['@URI'] is not unique, but we only need it
+            // once, we simply don't care about the other occurrences
+            var currentUri = entity['@URI'];
+            if (!uris[currentUri]) {
+              uris[currentUri] = true;
+              entities.push({
+                name: entity['@surfaceForm'],
+                relevance: parseFloat(entity['@similarityScore']),
+                uris: [{
+                  uri: currentUri,
+                  source: currentService
+                }],
+                source: currentService
+              });                                        
+            }
+          }
+        }   
+        // success   	
+        json[0].entities = entities;     
+        sendResults(json);
+		  }); 		  
+    }).on('error', function(e) {
+      // error
+      sendResults(json);
+    });  
+  }
+  
+  /**
+   * Collects results to be sent back to the client
    */
-  function sendResults(json, service, pendingRequests) {
-    var json = {
-      result: json,
-      source: service
-    };      
+  function collectResults(json, service, pendingRequests) {
     if (!pendingRequests) {
-      res.setHeader('Content-Type', 'application/json');
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      if (req.query.callback) {      
-        res.send(req.query.callback + '(' + JSON.stringify(json) + ')');      
-      } else {
-        res.send(json);
-      }
+      spotlight(json);
     } else {
       pendingRequests[service] = json;
     }
+  }
+  
+  /**
+   * Sends results back to the client
+   */
+  function sendResults(json) {
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    if (req.query.callback) {      
+      res.send(req.query.callback + '(' + JSON.stringify(json) + ')');      
+    } else {
+      res.send(json);
+    }    
   }
     
   var path = /^\/search\/(.+)\/(.+)$/;
@@ -192,10 +274,10 @@ function search(req, res, next) {
               });
             }
           }
-          sendResults(results, currentService, pendingRequests);
+          collectResults(results, currentService, pendingRequests);
         });
       }).on('error', function(e) {
-        sendResults([], currentService, pendingRequests);
+        collectResults([], currentService, pendingRequests);
       });
     },
     twitter: function(pendingRequests) {
@@ -334,15 +416,15 @@ function search(req, res, next) {
                     locationIndex++;
                   });
                 }
-                sendResults(results, currentService, pendingRequests);
+                collectResults(results, currentService, pendingRequests);
               }
             );            
           } else {
-            sendResults([], currentService, pendingRequests);
+            collectResults([], currentService, pendingRequests);
           }          
         });
       }).on('error', function(e) {
-        sendResults([], currentService, pendingRequests);
+        collectResults([], currentService, pendingRequests);
       });               
     },
     instagram: function(pendingRequests) {
@@ -388,10 +470,10 @@ function search(req, res, next) {
               });
             }
           }
-          sendResults(results, currentService, pendingRequests);
+          collectResults(results, currentService, pendingRequests);
         });
       }).on('error', function(e) {
-        sendResults([], currentService, pendingRequests);
+        collectResults([], currentService, pendingRequests);
       });                       
     },    
     youtube: function(pendingRequests) {
@@ -436,10 +518,10 @@ function search(req, res, next) {
               });
             }
           }
-          sendResults(results, currentService, pendingRequests);
+          collectResults(results, currentService, pendingRequests);
         });
       }).on('error', function(e) {
-        sendResults([], currentService, pendingRequests);
+        collectResults([], currentService, pendingRequests);
       });                       
     },
     flickrvideos: function(pendingRequests) {
@@ -531,15 +613,15 @@ function search(req, res, next) {
                 }
               },
               function() {
-                sendResults(results, currentService, pendingRequests);
+                collectResults(results, currentService, pendingRequests);
               }
             );
           } else {
-            sendResults([], currentService, pendingRequests);
+            collectResults([], currentService, pendingRequests);
           }
         });
       }).on('error', function(e) {
-        sendResults([], currentService, pendingRequests);
+        collectResults([], currentService, pendingRequests);
       });
     },
     mobypicture: function(pendingRequests) {
@@ -581,10 +663,10 @@ function search(req, res, next) {
               });
             }
           }
-          sendResults(results, currentService, pendingRequests);
+          collectResults(results, currentService, pendingRequests);
         });
       }).on('error', function(e) {
-        sendResults([], currentService, pendingRequests);
+        collectResults([], currentService, pendingRequests);
       });
     },
     twitpic: function(pendingRequests) {   
@@ -660,15 +742,15 @@ function search(req, res, next) {
                 }
               },
               function() {
-                sendResults(results, currentService, pendingRequests);
+                collectResults(results, currentService, pendingRequests);
               }
             );
           } else {
-            sendResults(results, currentService, pendingRequests);
+            collectResults(results, currentService, pendingRequests);
           }
         });
       }).on('error', function(e) {
-        sendResults([], currentService, pendingRequests);
+        collectResults([], currentService, pendingRequests);
       });
     }
   };
@@ -699,7 +781,7 @@ function search(req, res, next) {
       }
       clearInterval(interval);
       var results = pendingRequests;
-      sendResults(results, 'combined', false);
+      collectResults(results, 'combined', false);
       pendingRequests = {};
     }, intervalTimeout);    
   } 
