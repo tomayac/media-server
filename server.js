@@ -122,74 +122,89 @@ function search(req, res, next) {
   /**
    * Annotates messages with DBpedia Spotlight
    */  
-  function spotlight(json) {
-    var text = '';
-    for (var i = 0, len = json.length; i < len; i++) {
-      var item = json[i];
-      text += item.message.clean;
-      item.entities = {};
-    }            
+  function spotlight(json) {    
     var currentService = 'spotlight';
-    var params = {
-      confidence: 0.2,
-      support: 20,
-      text:	text
-    };
-    params = querystring.stringify(params);
     var options = {
-      host: 'spotlight.dbpedia.org',
-      port: 80,
-      path: '/rest/annotate?' + params,
       headers: {Accept: 'application/json'}     
-    };
-    var entities = [];      	    
-    http.get(options, function(res) {        
-      var response = '';
-      res.on('data', function(chunk) {
-        response += chunk;
-      });
-      res.on('end', function() {          
-        try {
-          response = JSON.parse(response);
-        } catch(e) {
-          // error
-          sendResults(json);
-          return;
-        }                    
-        if (response.Error || !response.Resources) {
-          // error
-          sendResults(json);
-          return;
-        }
-        if (response.Resources) {
-          var uris = {};
-          for (var i = 0, len = response.Resources.length; i < len; i++) {
-            var entity = response.Resources[i];              
-            // the value of entity['@URI'] is not unique, but we only need it
-            // once, we simply don't care about the other occurrences
-            var currentUri = entity['@URI'];
-            if (!uris[currentUri]) {
-              uris[currentUri] = true;
-              entities.push({
-                name: entity['@surfaceForm'],
-                relevance: parseFloat(entity['@similarityScore']),
-                uris: [{
-                  uri: currentUri,
-                  source: currentService
-                }],
-                source: currentService
-              });                                        
-            }
-          }
-        }   
-        // success   	
-        json[0].entities = entities;     
+    };  
+    var collector = {};
+    Step(
+      function() {
+        var group = this.group();
+        var services = typeof(json) === 'object' ? Object.keys(json) : {};
+        services.forEach(function(serviceName) {          
+          var service = json[serviceName];
+          collector[serviceName] = [];
+          service.forEach(function(item, i) {  
+            var text = item.message.clean;        
+            options.url = 'http://spotlight.dbpedia.org/rest/annotate' +
+                '?text=' + encodeURIComponent(text) + 
+                '&confidence=0.2' +
+                '&support=20';                    
+            var cb = group();          
+            request(options, function(err, res, body) {
+              if (!err && res.statusCode === 200) {
+                var response;
+                try {
+                  response = JSON.parse(body);
+                } catch(e) {
+                  // error
+                  collector[serviceName][i] = [];   
+                  cb(null, []);
+                  return;
+                }                    
+                if (response.Error || !response.Resources) {
+                  // error            
+                  collector[serviceName][i] = [];
+                  cb(null, []);            
+                  return;
+                }
+                var entities = [];      	              
+                if (response.Resources) {                
+                  var uris = {};
+                  var resources = response.Resources;
+                  for (var j = 0, len2 = resources.length; j < len2; j++) {
+                    var entity = resources[j];              
+                    // the value of entity['@URI'] is not unique, but we only
+                    // need it once, we simply don't care about the other
+                    // occurrences
+                    var currentUri = entity['@URI'];
+                    if (!uris[currentUri]) {
+                      uris[currentUri] = true;
+                      entities.push({
+                        name: entity['@surfaceForm'],
+                        relevance: parseFloat(entity['@similarityScore']),
+                        uris: [{
+                          uri: currentUri,
+                          source: currentService
+                        }],
+                        source: currentService
+                      });                                        
+                    }
+                  }                            
+                }   
+                // success
+                collector[serviceName][i] = entities;
+              } else {
+                // error
+                collector[serviceName][i] = [];
+              }
+              cb(null);            
+            });          
+          });   
+        });         
+      },
+      function(err) {     
+        var services = typeof(json) === 'object' ? Object.keys(json) : {};
+        services.forEach(function(serviceName) {          
+          var service = json[serviceName];
+          service.forEach(function(item, i) {  
+            item.message.entities = collector[serviceName][i];
+          });
+        });
         sendResults(json);
-		  }); 		  
-    }).on('error', function(e) {
-      // error
-      sendResults(json);
-    });  
+      }  
+    );        
   }
   
   /**
@@ -197,6 +212,11 @@ function search(req, res, next) {
    */
   function collectResults(json, service, pendingRequests) {
     if (!pendingRequests) {
+      if (service !== 'combined') {
+        var temp = json;
+        json = {};
+        json[service] = temp;
+      }
       spotlight(json);
     } else {
       pendingRequests[service] = json;
