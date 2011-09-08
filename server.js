@@ -34,6 +34,7 @@ var GLOBAL_config = {
   YFROG_KEY: '89ABGHIX5300cc8f06b447103e19a201c7599962',
   INSTAGRAM_KEY: '82fe3d0649e04c2da8e38736547f9170',
   INSTAGRAM_SECRET: '4cf97de2075c4c8fbebdde57c5f9705a',
+  GOOGLE_KEY: 'AIzaSyC5GxhDFxBHTKCLNMYtYm6o1tiagi65Ufc',
   HEADERS: {
     "Accept": "application/json, text/javascript, */*",
     "Accept-Charset": "ISO-8859-1,utf-8;q=0.7,*;q=0.3",
@@ -136,7 +137,14 @@ function search(req, res, next) {
           var service = json[serviceName];
           collector[serviceName] = [];
           service.forEach(function(item, i) {  
-            var text = item.message.clean;        
+            var text;
+            if (item.message.translation.language !== 'en') {            
+              // use the translated version
+              text = item.message.translation.text;        
+            } else {
+              // use the original version
+              text = item.message.clean;
+            }
             options.url = 'http://spotlight.dbpedia.org/rest/annotate' +
                 '?text=' + encodeURIComponent(text) + 
                 '&confidence=0.2' +
@@ -150,13 +158,13 @@ function search(req, res, next) {
                 } catch(e) {
                   // error
                   collector[serviceName][i] = [];   
-                  cb(null, []);
+                  cb(null);
                   return;
                 }                    
                 if (response.Error || !response.Resources) {
                   // error            
                   collector[serviceName][i] = [];
-                  cb(null, []);            
+                  cb(null);            
                   return;
                 }
                 var entities = [];      	              
@@ -206,6 +214,90 @@ function search(req, res, next) {
       }  
     );        
   }
+
+  /**
+   * Translates messages one by one
+   */
+  function translate(json) {
+    var options = {
+      headers: {
+        "X-HTTP-Method-Override": 'GET'
+      },
+      method: 'POST',
+      url: 'https://www.googleapis.com/language/translate/v2',
+      body: {
+        key: GLOBAL_config.GOOGLE_KEY,
+        target: 'en'    
+      }
+    };  
+    var collector = {};
+    Step(
+      function() {
+console.log('Yibbie')        ;
+        var group = this.group();
+        var services = typeof(json) === 'object' ? Object.keys(json) : {};
+        services.forEach(function(serviceName) {          
+          var cb = group();                    
+          var service = json[serviceName];
+          collector[serviceName] = [];
+          service.forEach(function(item, i) {  
+            var text = item.message.clean;        
+            options.body.q[i] = text;
+          });
+          options.body = JSON.stringify(options.body);
+console.log('Yay');
+console.log(options);          
+console.log('Nay');          
+          request(options, function(err, res, body) {    
+            console.log(options);
+            console.log(body);
+            if (!err && res.statusCode === 200) {
+              var response;
+              try {
+                response = JSON.parse(body);
+              } catch(e) {
+                // error
+                collector[serviceName][i] = {
+                  text: '',
+                  language: ''
+                };   
+                cb(null);
+                return;
+              }                    
+              if ((response.data) &&
+                  (response.data.translations) &&
+                  (Array.isArray(response.data.translations))) {                
+                response.data.translations.forEach(function(translation, j) {                    
+                  collector[serviceName][j] = {
+                    text: translation.translatedText,
+                    language: translation.detectedSourceLanguage
+                  };
+                });
+              } else {
+                // error
+                collector[serviceName][i] = {
+                  text: '',
+                  language: ''
+                };
+              }
+              cb(null);            
+            }
+          });                              
+        });         
+      },
+      function(err) {   
+console.log('Yoyoyo');          
+        var services = typeof(json) === 'object' ? Object.keys(json) : {};
+        services.forEach(function(serviceName) {          
+          var service = json[serviceName];
+          service.forEach(function(item, i) {  
+            item.message.translation = collector[serviceName][i];
+          });
+        });
+        spotlight(json);
+      }  
+    );   
+  } 
   
   /**
    * Collects results to be sent back to the client
@@ -217,7 +309,7 @@ function search(req, res, next) {
         json = {};
         json[service] = temp;
       }
-      spotlight(json);
+      translate(json);
     } else {
       pendingRequests[service] = json;
     }
