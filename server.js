@@ -80,7 +80,73 @@ function search(req, res, next) {
         pad(d.getUTCMinutes()) + ':' +
         pad(d.getUTCSeconds()) + 'Z';
   }
-
+  
+  /**
+   * Cleans video URLs, tries to convert YouTube URLS to HTML5 versions
+   */
+  function cleanVideoUrl(url, callback) {
+    // if is YouTube URL
+    if ((url.indexOf('http://www.youtube.com') === 0) || 
+        (url.indexOf('https://www.youtube.com') === 0)) {
+      try {
+        var urlObj = new Uri(url);
+        var host = urlObj.heirpart().authority().host();
+        var path = urlObj.heirpart().path();
+        var pathComponents = path.split(/\//gi);    
+        var videoId;
+        if (pathComponents[1] === 'v') {
+          // URL of 'v' type:
+          // http://www.youtube.com/v/WnszesKUXp8
+          videoId = pathComponents[2];
+        } else if (pathComponents[1] === 'watch') {   
+          // URL of "watch" type:
+          // http://www.youtube.com/watch?v=EVBsypHzF3U
+          var query = urlObj.querystring();
+          query.substring(1).split(/&/gi).forEach(function(param) {
+            var keyValue = param.split(/=/gi);
+            if (keyValue[0] === 'v') {
+              videoId = keyValue[1];            
+            }
+          });        
+        }
+        // Translate to HTML5 video URL, try at least
+        Step(
+          function() {
+            var that = this;
+            var options = {
+              url: 'http://tomayac.com/youpr0n/getVideoInfo.php?video=' +
+                  videoId
+            }
+            request.get(options, function(err, res, body) {
+              that(null, body);
+            });
+          },
+          function(err, body) {
+            var response = JSON.parse(body);
+            var html5Url = false;
+            for (var i = 0, len = response.length; i < len; i++) {
+              var data = response[i];
+              if (data.type.indexOf('video/webm') === 0) {
+                html5Url = data.url;
+                break;
+              }
+            }
+            // if either embedding forbidden or no HTML5 version available,
+            // use the normalized YouTube URL
+            if (!html5Url) {
+              html5Url = 'http://www.youtube.com/watch?v=' + videoId;
+            }
+            callback(html5Url);
+          }
+        );        
+      } catch(e) {
+        callback(url);
+      }
+    } else {
+      callback(url);      
+    }
+  }
+  
   /**
    * Replaces HTML entities
    */
@@ -375,35 +441,48 @@ function search(req, res, next) {
           var results = [];
           if ((response.data) && (response.data.length)) {
             var items = response.data;
-            for (var i = 0, len = items.length; i < len; i++) {
-              var item = items[i];
-              if (item.type !== 'photo' && item.type !== 'video') {
-                continue;
+            Step(
+              function() {
+                var group = this.group();            
+                items.forEach(function(item) {
+                  if (item.type !== 'photo' && item.type !== 'video') {
+                    return;
+                  }
+                  var cb = group();
+                  var timestamp = Date.parse(item.created_time);
+                  var message = '';
+                  message += (item.name ? item.name : '');
+                  message += (item.caption ?
+                      (message.length ? '. ' : '') + item.caption : '');
+                  message += (item.description ?
+                      (message.length ? '. ' : '') + item.description : '');
+                  message += (item.message ?
+                      (message.length ? '. ' : '') + item.message : '');                            
+                  var mediaUrl = item.type === 'video' ?
+                      item.source : item.picture;
+                  cleanVideoUrl(mediaUrl, function(cleanedMediaUrl) {
+                    results.push({
+                      storyurl:
+                          'https://www.facebook.com/permalink.php?story_fbid=' + 
+                          item.id.split(/_/)[1] + '&id=' + item.from.id,
+                      mediaurl: cleanedMediaUrl,
+                      message: cleanMessage(message),
+                      user:
+                          'https://www.facebook.com/profile.php?id=' +
+                          item.from.id,
+                      type: item.type,
+                      timestamp: timestamp,
+                      published: getIsoDateString(timestamp)
+                    });
+                    cb(null);
+                  });
+                });
+              },
+              function(err) {
+                collectResults(results, currentService, pendingRequests);                
               }
-              var timestamp = Date.parse(item.created_time);
-              var message = '';
-              message += (item.name ? item.name : '');
-              message += (item.caption ?
-                  (message.length ? '. ' : '') + item.caption : '');
-              message += (item.description ?
-                  (message.length ? '. ' : '') + item.description : '');
-              message += (item.message ?
-                  (message.length ? '. ' : '') + item.message : '');                            
-              results.push({
-                storyurl: 'https://www.facebook.com/permalink.php?story_fbid=' + 
-                    item.id.split(/_/)[1] + '&id=' + item.from.id,
-                mediaurl: item.type === 'video' ?
-                    item.source :
-                    item.picture,
-                message: cleanMessage(message),
-                user: 'https://www.facebook.com/profile.php?id=' + item.from.id,
-                type: item.type,
-                timestamp: timestamp,
-                published: getIsoDateString(timestamp)
-              });
-            }
-          }
-          collectResults(results, currentService, pendingRequests);
+            );              
+          }          
         });
       }).on('error', function(e) {
         collectResults([], currentService, pendingRequests);
