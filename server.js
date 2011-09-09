@@ -82,40 +82,32 @@ function search(req, res, next) {
   }
 
   /**
+   * Replaces HTML entities
+   */
+  function replaceHtmlEntities(message) {
+    message = message.replace(/&quot;/gi, '\"');      
+    message = message.replace(/&apos;/gi, '\'');      
+    message = message.replace(/&amp;/gi, '&');  
+    message = message.replace(/&gt;/gi, '>');  
+    message = message.replace(/&lt;/gi, '<');  
+    message = message.replace(/&#39;/gi, '\'');  
+    return message;    
+  }
+
+  /**
    * Removes line breaks, double spaces, etc.
    */
   function cleanMessage(message) {
     if (message) {
-      message = message.replace(/[\n\r\t]/g, ' ').replace(/\s+/g, ' ');
-      message = message.replace('&quot;', '\"');      
-      message = message.replace('&apos;', '\'');      
-      message = message.replace('&amp;', '&');  
-      message = message.replace('&gt;', '>');  
-      message = message.replace('&lt;', '<');  
+      message = message.replace(/[\n\r\t]/gi, ' ').replace(/\s+/g, ' ');
+      message = replaceHtmlEntities(message);
       var cleanMessage = message.replace(GLOBAL_config.URL_REGEX, ' ');      
       cleanMessage = cleanMessage.replace(GLOBAL_config.HASHTAG_REGEX, ' $2');
       cleanMessage = cleanMessage.replace(GLOBAL_config.USER_REGEX, ' $2');
       cleanMessage = cleanMessage.replace(/\s+/g, ' ');
-      var words = new Lexer().lex(cleanMessage);
-      var taggedWords = new POSTagger().tag(words);
-      var result = [];
-      for (i in taggedWords) {
-        var taggedWord = taggedWords[i];
-        if ((taggedWord[1] === 'NNS') ||
-            (taggedWord[1] === 'NNPS') ||
-            (taggedWord[1] === 'NNP')) {
-          var word = taggedWord[0];
-          var tag = taggedWord[2];
-          result.push({
-            word: word.toLowerCase(),
-            tag: tag
-          });
-        }
-      }            
       return {
         text: message,
-        clean: cleanMessage,
-        nouns: result         
+        clean: cleanMessage
       };          
     }
   }
@@ -126,17 +118,22 @@ function search(req, res, next) {
   function spotlight(json) {    
     var currentService = 'spotlight';
     var options = {
-      headers: {Accept: 'application/json'}     
+      headers: {
+        "Accept": 'application/json'
+      },
+      body: ''     
     };  
     var collector = {};
+    var httpMethod = 'GET';
+    options.method = httpMethod;
     Step(
       function() {
         var group = this.group();
         var services = typeof(json) === 'object' ? Object.keys(json) : {};
-        services.forEach(function(serviceName) {          
+        services.forEach(function(serviceName) {                    
           var service = json[serviceName];
           collector[serviceName] = [];
-          service.forEach(function(item, i) {  
+          service.forEach(function(item, i) {              
             var text;
             if (item.message.translation.language !== 'en') {            
               // use the translated version
@@ -144,12 +141,20 @@ function search(req, res, next) {
             } else {
               // use the original version
               text = item.message.clean;
+            } 
+            if (httpMethod === 'POST') {        
+              options.headers['Content-Type'] =
+                  'application/x-www-form-urlencoded';              
+              options.url = 'http://spotlight.dbpedia.org/rest/annotate';
+              options.body =
+                  'text=' + encodeURIComponent(text) + 
+                  '&confidence=0.2&support=20';            
+            } else {
+              options.url = 'http://spotlight.dbpedia.org/rest/annotate' +
+                  '?text=' + encodeURIComponent(text) + 
+                  '&confidence=0.2&support=20';                          
             }
-            options.url = 'http://spotlight.dbpedia.org/rest/annotate' +
-                '?text=' + encodeURIComponent(text) + 
-                '&confidence=0.2' +
-                '&support=20';                    
-            var cb = group();          
+            var cb = group();  
             request(options, function(err, res, body) {
               if (!err && res.statusCode === 200) {
                 var response;
@@ -208,6 +213,30 @@ function search(req, res, next) {
           var service = json[serviceName];
           service.forEach(function(item, i) {  
             item.message.entities = collector[serviceName][i];
+            
+            // part of speech tagging
+            var words;
+            if (item.message.translation.language === 'en') {            
+              words = new Lexer().lex(item.message.clean);
+            } else {
+              words = new Lexer().lex(item.message.translation.text);
+            }  
+            var taggedWords = new POSTagger().tag(words);                        
+            var result = [];
+            for (var j = 0, len = taggedWords.length; j < len; j++) {
+              var taggedWord = taggedWords[j];
+              if ((taggedWord[1] === 'NNS') ||
+                  (taggedWord[1] === 'NNPS') ||
+                  (taggedWord[1] === 'NNP')) {
+                var word = taggedWord[0];
+                var tag = taggedWord[2];
+                result.push({
+                  word: word.toLowerCase(),
+                  tag: tag
+                });
+              }
+              item.message.nouns = result;            
+            }
           });
         });
         sendResults(json);
@@ -221,19 +250,16 @@ function search(req, res, next) {
   function translate(json) {
     var options = {
       headers: {
-        "X-HTTP-Method-Override": 'GET'
+        "X-HTTP-Method-Override": 'GET',
+        "Content-Type": "application/x-www-form-urlencoded"
       },
       method: 'POST',
       url: 'https://www.googleapis.com/language/translate/v2',
-      body: {
-        key: GLOBAL_config.GOOGLE_KEY,
-        target: 'en'    
-      }
+      body: 'key=' + GLOBAL_config.GOOGLE_KEY + '&target=en'
     };  
     var collector = {};
     Step(
       function() {
-console.log('Yibbie')        ;
         var group = this.group();
         var services = typeof(json) === 'object' ? Object.keys(json) : {};
         services.forEach(function(serviceName) {          
@@ -242,15 +268,9 @@ console.log('Yibbie')        ;
           collector[serviceName] = [];
           service.forEach(function(item, i) {  
             var text = item.message.clean;        
-            options.body.q[i] = text;
+            options.body += '&q=' + encodeURIComponent(text);
           });
-          options.body = JSON.stringify(options.body);
-console.log('Yay');
-console.log(options);          
-console.log('Nay');          
           request(options, function(err, res, body) {    
-            console.log(options);
-            console.log(body);
             if (!err && res.statusCode === 200) {
               var response;
               try {
@@ -269,7 +289,7 @@ console.log('Nay');
                   (Array.isArray(response.data.translations))) {                
                 response.data.translations.forEach(function(translation, j) {                    
                   collector[serviceName][j] = {
-                    text: translation.translatedText,
+                    text: replaceHtmlEntities(translation.translatedText),
                     language: translation.detectedSourceLanguage
                   };
                 });
@@ -286,7 +306,6 @@ console.log('Nay');
         });         
       },
       function(err) {   
-console.log('Yoyoyo');          
         var services = typeof(json) === 'object' ? Object.keys(json) : {};
         services.forEach(function(serviceName) {          
           var service = json[serviceName];
@@ -309,7 +328,7 @@ console.log('Yoyoyo');
         json = {};
         json[service] = temp;
       }
-      translate(json);
+      translate(json);      
     } else {
       pendingRequests[service] = json;
     }
@@ -371,11 +390,9 @@ console.log('Yoyoyo');
               message += (item.message ?
                   (message.length ? '. ' : '') + item.message : '');                            
               results.push({
-                /*
-                url: 'https://www.facebook.com/permalink.php?story_fbid=' + 
+                storyurl: 'https://www.facebook.com/permalink.php?story_fbid=' + 
                     item.id.split(/_/)[1] + '&id=' + item.from.id,
-                */
-                url: item.type === 'video' ?
+                mediaurl: item.type === 'video' ?
                     item.source :
                     item.picture,
                 message: cleanMessage(message),
