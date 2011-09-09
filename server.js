@@ -2,6 +2,8 @@ var http = require('http');
 var https = require('https');
 var querystring = require('querystring');
 var request = require('request');
+var jsdom = require('jsdom');
+
 var Step = require('./step.js');
 var Uri = require('./uris.js');
 
@@ -28,6 +30,7 @@ app.configure('production', function() {
 });
 
 var GLOBAL_config = {
+  DEBUG: true,
   MOBYPICTURE_KEY: 'TGoRMvQMAzWL2e9t',
   FLICKR_SECRET: 'a4a150addb7d59f1',
   FLICKR_KEY: 'b0f2a04baa5dd667fb181701408db162',
@@ -40,7 +43,7 @@ var GLOBAL_config = {
     "Accept-Charset": "ISO-8859-1,utf-8;q=0.7,*;q=0.3",
     "Accept-Language": "en-US,en;q=0.8,fr-FR;q=0.6,fr;q=0.4,de;q=0.2,de-DE;q=0.2,es;q=0.2,ca;q=0.2",
     "Connection": "keep-alive",
-    "Content-Type": "application/x-www-form-urlencoded",    
+    "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",    
     "Referer": "http://www.google.com/",
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_6_8) AppleWebKit/535.2 (KHTML, like Gecko) Chrome/15.0.854.0 Safari/535.2",
   },
@@ -182,6 +185,7 @@ function search(req, res, next) {
    * Annotates messages with DBpedia Spotlight
    */  
   function spotlight(json) {    
+    if (GLOBAL_config.DEBUG) console.log('spotlight');    
     var currentService = 'spotlight';
     var options = {
       headers: {
@@ -201,8 +205,9 @@ function search(req, res, next) {
           collector[serviceName] = [];
           service.forEach(function(item, i) {              
             var text;
-            if (item.message.translation.language !== 'en') {            
-              // use the translated version
+            if ((item.message.translation.text) &&
+                (item.message.translation.language !== 'en')) {            
+              // for non-English texts, use the translation if it exists
               text = item.message.translation.text;        
             } else {
               // use the original version
@@ -210,7 +215,7 @@ function search(req, res, next) {
             } 
             if (httpMethod === 'POST') {        
               options.headers['Content-Type'] =
-                  'application/x-www-form-urlencoded';              
+                  'application/x-www-form-urlencoded; charset=UTF-8';              
               options.url = 'http://spotlight.dbpedia.org/rest/annotate';
               options.body =
                   'text=' + encodeURIComponent(text) + 
@@ -282,10 +287,12 @@ function search(req, res, next) {
             
             // part of speech tagging
             var words;
-            if (item.message.translation.language === 'en') {            
-              words = new Lexer().lex(item.message.clean);
-            } else {
+            if ((item.message.translation.text) &&
+                (item.message.translation.language !== 'en')) {            
+              // for non-English texts, use the translation if it exists    
               words = new Lexer().lex(item.message.translation.text);
+            } else {
+              words = new Lexer().lex(item.message.clean);              
             }  
             var taggedWords = new POSTagger().tag(words);                        
             var result = [];
@@ -314,10 +321,11 @@ function search(req, res, next) {
    * Translates messages one by one
    */
   function translate(json) {
+    if (GLOBAL_config.DEBUG) console.log('translate');    
     var options = {
       headers: {
         "X-HTTP-Method-Override": 'GET',
-        "Content-Type": "application/x-www-form-urlencoded"
+        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"
       },
       method: 'POST',
       url: 'https://www.googleapis.com/language/translate/v2',
@@ -335,6 +343,10 @@ function search(req, res, next) {
           service.forEach(function(item, i) {  
             var text = item.message.clean;        
             options.body += '&q=' + encodeURIComponent(text);
+            collector[serviceName][i] = {
+              text: '',
+              language: ''
+            };               
           });
           request(options, function(err, res, body) {    
             if (!err && res.statusCode === 200) {
@@ -343,10 +355,6 @@ function search(req, res, next) {
                 response = JSON.parse(body);
               } catch(e) {
                 // error
-                collector[serviceName][i] = {
-                  text: '',
-                  language: ''
-                };   
                 cb(null);
                 return;
               }                    
@@ -359,14 +367,12 @@ function search(req, res, next) {
                     language: translation.detectedSourceLanguage
                   };
                 });
-              } else {
-                // error
-                collector[serviceName][i] = {
-                  text: '',
-                  language: ''
-                };
               }
               cb(null);            
+            } else {
+              // error
+              cb(null);
+              return;              
             }
           });                              
         });         
@@ -388,6 +394,7 @@ function search(req, res, next) {
    * Collects results to be sent back to the client
    */
   function collectResults(json, service, pendingRequests) {
+    if (GLOBAL_config.DEBUG) console.log('collectResults');    
     if (!pendingRequests) {
       if (service !== 'combined') {
         var temp = json;
@@ -404,7 +411,8 @@ function search(req, res, next) {
    * Sends results back to the client
    */
   function sendResults(json) {
-    res.setHeader('Content-Type', 'application/json');
+    if (GLOBAL_config.DEBUG) console.log('sendResults');    
+    res.setHeader('Content-Type', 'application/json; charset=UTF-8');
     res.setHeader('Access-Control-Allow-Origin', '*');
     if (req.query.callback) {      
       res.send(req.query.callback + '(' + JSON.stringify(json) + ')');      
@@ -420,7 +428,8 @@ function search(req, res, next) {
 
   var services = {    
     facebook: function(pendingRequests) {      
-      var currentService = 'facebook';         
+      var currentService = 'facebook';  
+      if (GLOBAL_config.DEBUG) console.log(currentService);       
       var params = {
         q: query
       };
@@ -482,6 +491,8 @@ function search(req, res, next) {
                 collectResults(results, currentService, pendingRequests);                
               }
             );              
+          } else {
+            collectResults(results, currentService, pendingRequests);                            
           }          
         });
       }).on('error', function(e) {
@@ -489,7 +500,8 @@ function search(req, res, next) {
       });
     },
     twitter: function(pendingRequests) {
-      var currentService = 'twitter';         
+      var currentService = 'twitter';  
+      if (GLOBAL_config.DEBUG) console.log(currentService);              
       var params = {
         q: query + ' ' + GLOBAL_config.MEDIA_PLATFORMS.join(' OR ') + ' -"RT "'
       };
@@ -636,7 +648,8 @@ function search(req, res, next) {
       });               
     },
     instagram: function(pendingRequests) {
-      var currentService = 'instagram';         
+      var currentService = 'instagram';     
+      if (GLOBAL_config.DEBUG) console.log(currentService);           
       var params = {
         client_id: GLOBAL_config.INSTAGRAM_KEY
       };
@@ -685,7 +698,8 @@ function search(req, res, next) {
       });                       
     },    
     youtube: function(pendingRequests) {
-      var currentService = 'youtube';         
+      var currentService = 'youtube';   
+      if (GLOBAL_config.DEBUG) console.log(currentService);             
       var params = {
         v: 2,
         format: 5,
@@ -713,20 +727,38 @@ function search(req, res, next) {
           var results = [];
           if ((response.data) && (response.data.items)) {
             var items = response.data.items;
-            for (var i = 0, len = items.length; i < len; i++) {
-              var item = items[i];
-              var timestamp = Date.parse(item.uploaded);
-              results.push({
-                url: item.player.default,
-                message: cleanMessage(item.title + '. ' + item.description),
-                user: 'http://www.youtube.com/' + item.uploader,
-                type: 'video',
-                timestamp: timestamp,
-                published: getIsoDateString(timestamp)
-              });
-            }
+            Step(
+              function() {
+                var group = this.group();            
+                items.forEach(function(item) {
+                  if (item.accessControl.embed !== 'allowed') {
+                    return;
+                  }
+                  var cb = group();
+                  var timestamp = Date.parse(item.uploaded);
+                  var url = item.player.default;
+                  cleanVideoUrl(url, function(cleanedVideoUrl) {
+                    results.push({
+                      mediaurl: cleanedVideoUrl,
+                      storyurl: url,
+                      message: cleanMessage(
+                          item.title + '. ' + item.description),
+                      user: 'http://www.youtube.com/' + item.uploader,
+                      type: 'video',
+                      timestamp: timestamp,
+                      published: getIsoDateString(timestamp)
+                    });                    
+                    cb(null);
+                  });
+                });
+              },
+              function(err) {
+                collectResults(results, currentService, pendingRequests);                
+              }
+            );              
+          } else {
+            collectResults(results, currentService, pendingRequests);                            
           }
-          collectResults(results, currentService, pendingRequests);
         });
       }).on('error', function(e) {
         collectResults([], currentService, pendingRequests);
@@ -737,6 +769,7 @@ function search(req, res, next) {
     },
     flickr: function(pendingRequests, videoSearch) {     
       var currentService = videoSearch ? 'flickrvideos' : 'flickr';         
+      if (GLOBAL_config.DEBUG) console.log(currentService);       
       var now = new Date().getTime();
       var sixDays = 86400000 * 6;
       var params = {
@@ -834,6 +867,7 @@ function search(req, res, next) {
     },
     mobypicture: function(pendingRequests) {
       var currentService = 'mobypicture';         
+      if (GLOBAL_config.DEBUG) console.log(currentService);       
       var params = {
         key: GLOBAL_config.MOBYPICTURE_KEY,
         action: 'searchPosts',
@@ -878,7 +912,8 @@ function search(req, res, next) {
       });
     },
     twitpic: function(pendingRequests) {   
-      var currentService = 'twitpic';         
+      var currentService = 'twitpic';   
+      if (GLOBAL_config.DEBUG) console.log(currentService);             
       var params = {
         type: 'mixed',
         page: 1,
@@ -906,11 +941,11 @@ function search(req, res, next) {
                 for (var i = 0, len = response.length; i < len; i++) {
                   var item = response[i];
                   var id = item.link.replace(/.*?\/(\w+)$/, '$1');
-                  params = {
+                  var params = {
                     id: id
                   };
                   params = querystring.stringify(params);
-                  options = {
+                  var options = {
                     host: 'api.twitpic.com',
                     port: 80,
                     path: '/2/media/show.json?' + params,
@@ -931,15 +966,34 @@ function search(req, res, next) {
                       }
                       if (!response2.errors) {                      
                         var timestamp = Date.parse(response2.timestamp);
-                        results.push({
-                          url: 'http://twitpic.com/' + response2.short_id,
-                          message: cleanMessage(response2.message), 
-                          user: 'http://twitter.com/' + response2.user.username,
-                          type: 'photo',
-                          timestamp: timestamp,
-                          published: getIsoDateString(timestamp)
+                        var options = {
+                          url: 'http://twitpic.com/' +
+                              response2.short_id + '/full'
+                        };
+                        request.get(options, function(err, res, body) {
+                          jsdom.env(body, function(errors, window) {
+                            var $ = window.document; 
+                            var mediaUrl;
+                            try {
+                              mediaUrl = $.getElementsByTagName('IMG')[1].src;
+                            } catch(e) {
+                              console.log('Twitpic screen scraper broken');
+                              mediaUrl = url;
+                            }
+                            results.push({
+                              mediaurl: mediaUrl,
+                              storyurl: 'http://twitpic.com/' +
+                                  response2.short_id,
+                              message: cleanMessage(response2.message), 
+                              user: 'http://twitter.com/' +
+                                  response2.user.username,
+                              type: 'photo',
+                              timestamp: timestamp,
+                              published: getIsoDateString(timestamp)
+                            });
+                            cb();                            
+                          });
                         });
-                        cb();
                       } else {
                         cb();
                       }
