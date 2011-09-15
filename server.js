@@ -194,7 +194,7 @@ function search(req, res, next) {
       body: ''     
     };  
     var collector = {};
-    var httpMethod = 'GET';
+    var httpMethod = 'POST';
     options.method = httpMethod;
     Step(
       function() {
@@ -833,19 +833,44 @@ function search(req, res, next) {
                         });
                         var photo2 = response2.photo;
                         var timestamp = Date.parse(photo2.dates.taken);
-                        results.push({
-                          url: 'http://www.flickr.com/photos/' +
-                              photo2.owner.nsid + '/' + photo2.id + '/',
-                          message: cleanMessage(photo2.title._content + '. ' +
-                              photo2.description._content +
-                              tags.join(', ')),
-                          user: 'http://www.flickr.com/photos/' +
-                              photo2.owner.nsid + '/',
-                          type: (videoSearch ? 'video' : 'photo'),
-                          timestamp: timestamp,
-                          published: getIsoDateString(timestamp)
+                        var params = {
+                          method: 'flickr.photos.getSizes',
+                          api_key: GLOBAL_config.FLICKR_KEY,
+                          format: 'json',
+                          nojsoncallback: 1,
+                          photo_id: photo2.id
+                        };
+                        params = querystring.stringify(params);
+                        var options = {
+                          url: 'http://api.flickr.com/services/rest/?' + params,
+                          headers: GLOBAL_config.HEADERS
+                        };
+                        request.get(options, function(err, res2, body) {
+                          body = JSON.parse(body); 
+                          if ((body.sizes) && (body.sizes.size) &&
+                              (Array.isArray(body.sizes.size))) {
+                            var mediaurl = false;                                
+                            body.sizes.size.forEach(function(size) {                              
+                              if (size.label === 'Original') {
+                                mediaurl = size.source;
+                              }
+                            });
+                            results.push({
+                              mediaurl: mediaurl,
+                              storyurl: 'http://www.flickr.com/photos/' +
+                                  photo2.owner.nsid + '/' + photo2.id + '/',
+                              message: cleanMessage(photo2.title._content +
+                                  '. ' + photo2.description._content +
+                                  tags.join(', ')),
+                              user: 'http://www.flickr.com/photos/' +
+                                  photo2.owner.nsid + '/',
+                              type: (videoSearch ? 'video' : 'photo'),
+                              timestamp: timestamp,
+                              published: getIsoDateString(timestamp)
+                            });
+                          }
+                          cb();                                                    
                         });
-                        cb();             
                       });
                     }).on('error', function(e) {
                       cb();
