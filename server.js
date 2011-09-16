@@ -200,6 +200,23 @@ function search(req, res, next) {
   }
   
   /**
+   * Scrapes TwitPic
+   */
+  function scrapeTwitPic(body, callback) {
+    var mediaurl = false;
+    jsdom.env(body, function(errors, window) {
+      var $ = window.document; 
+      try {
+        mediaurl = $.getElementsByTagName('IMG')[1].src;
+        callback(mediaurl);
+      } catch(e) {
+        console.log('Twitpic screen scraper broken');
+        callback(mediaurl);
+      }
+    });    
+  } 
+  
+  /**
    * Annotates messages with DBpedia Spotlight
    */  
   function spotlight(json) {    
@@ -692,14 +709,7 @@ function search(req, res, next) {
                         };
                         (function(message, user, timestamp, published) {                        
                           request.get(options, function(err, res, body) {
-                            jsdom.env(body, function(errors, window) {
-                              var $ = window.document; 
-                              try {
-                                mediaurl = $.getElementsByTagName('IMG')[1].src;
-                              } catch(e) {
-                                console.log('Twitpic screen scraper broken');
-                                mediaurl = false;
-                              }
+                            scrapeTwitPic(body, function(mediaurl) {
                               results.push({
                                 mediaurl: mediaurl,
                                 storyurl: storyurl,
@@ -713,8 +723,8 @@ function search(req, res, next) {
                               if (pendingUrls === numberOfUrls) {                                                
                                 collectResults(
                                     results, currentService, pendingRequests);
-                              }
-                            });
+                              }                              
+                            });                            
                           });
                         })(message, user, timestamp, published);                        
                       // URL from unsupported media platform, don't consider it  
@@ -1087,15 +1097,7 @@ function search(req, res, next) {
                               response2.short_id + '/full'
                         };
                         request.get(options, function(err, res, body) {
-                          jsdom.env(body, function(errors, window) {
-                            var $ = window.document; 
-                            var mediaUrl;
-                            try {
-                              mediaUrl = $.getElementsByTagName('IMG')[1].src;
-                            } catch(e) {
-                              console.log('Twitpic screen scraper broken');
-                              mediaUrl = url;
-                            }
+                          scrapeTwitPic(body, function(mediaUrl) {
                             results.push({
                               mediaurl: mediaUrl,
                               storyurl: 'http://twitpic.com/' +
