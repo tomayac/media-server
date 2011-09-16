@@ -727,6 +727,34 @@ function search(req, res, next) {
                             });                            
                           });
                         })(message, user, timestamp, published);                        
+                      // Instagram  
+                      } else if (mediaurl.indexOf('http://instagr.am') === 0) {                        
+                        var id = mediaurl.replace('http://instagr.am/p/', '');
+                        var options = {
+                          url: 'https://api.instagram.com/v1/media/' + id + 
+                              '?access_token=' + GLOBAL_config.INSTAGRAM_KEY
+                        };
+                        (function(message, user, timestamp, published) {                        
+                          request.get(options, function(err, result, body) {
+                            body = JSON.parse(body);
+                            // ficken
+                            results.push({
+                              mediaurl:
+                                  body.data.images.standard_resolution.url,
+                              storyurl: storyurl,
+                              message: message,
+                              user: user,
+                              type: 'photo',
+                              timestamp: timestamp,
+                              published: published
+                            });  
+                            pendingUrls++;           
+                            if (pendingUrls === numberOfUrls) {                                                
+                              collectResults(
+                                  results, currentService, pendingRequests);
+                            }                              
+                          });
+                        })(message, user, timestamp, published);                                                
                       // URL from unsupported media platform, don't consider it  
                       } else {
                         numberOfUrls--;
