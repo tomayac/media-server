@@ -32,6 +32,8 @@ app.configure('production', function() {
 var GLOBAL_config = {
   DEBUG: true,
   TRANSLATE: false,
+  PART_OF_SPEECH: false,
+  NAMED_ENTITY_EXTRACTION: true,
   MOBYPICTURE_KEY: 'TGoRMvQMAzWL2e9t',
   FLICKR_SECRET: 'a4a150addb7d59f1',
   FLICKR_KEY: 'b0f2a04baa5dd667fb181701408db162',
@@ -186,6 +188,9 @@ function search(req, res, next) {
    * Annotates messages with DBpedia Spotlight
    */  
   function spotlight(json) {    
+    if (!GLOBAL_config.NAMED_ENTITY_EXTRACTION) {
+      return sendResults(json);
+    }
     if (GLOBAL_config.DEBUG) console.log('spotlight');    
     var currentService = 'spotlight';
     var options = {
@@ -236,14 +241,12 @@ function search(req, res, next) {
                 } catch(e) {
                   // error
                   collector[serviceName][i] = [];   
-                  cb(null);
-                  return;
+                  return cb(null);                  
                 }                    
                 if (response.Error || !response.Resources) {
                   // error            
                   collector[serviceName][i] = [];
-                  cb(null);            
-                  return;
+                  return cb(null);
                 }
                 var entities = [];      	              
                 if (response.Resources) {                
@@ -288,30 +291,32 @@ function search(req, res, next) {
             item.message.entities = collector[serviceName][i];
             
             // part of speech tagging
-            var words;
-            if ((item.message.translation) &&
-                (item.message.translation.text) &&
-                (item.message.translation.language !== 'en')) {            
-              // for non-English texts, use the translation if it exists    
-              words = new Lexer().lex(item.message.translation.text);
-            } else {
-              words = new Lexer().lex(item.message.clean);              
-            }  
-            var taggedWords = new POSTagger().tag(words);                        
-            var result = [];
-            for (var j = 0, len = taggedWords.length; j < len; j++) {
-              var taggedWord = taggedWords[j];
-              if ((taggedWord[1] === 'NNS') ||
-                  (taggedWord[1] === 'NNPS') ||
-                  (taggedWord[1] === 'NNP')) {
-                var word = taggedWord[0];
-                var tag = taggedWord[2];
-                result.push({
-                  word: word.toLowerCase(),
-                  tag: tag
-                });
+            if (GLOBAL_config.PART_OF_SPEECH) {            
+              var words;
+              if ((item.message.translation) &&
+                  (item.message.translation.text) &&
+                  (item.message.translation.language !== 'en')) {            
+                // for non-English texts, use the translation if it exists    
+                words = new Lexer().lex(item.message.translation.text);
+              } else {
+                words = new Lexer().lex(item.message.clean);              
+              }  
+              var taggedWords = new POSTagger().tag(words);                        
+              var result = [];
+              for (var j = 0, len = taggedWords.length; j < len; j++) {
+                var taggedWord = taggedWords[j];
+                if ((taggedWord[1] === 'NNS') ||
+                    (taggedWord[1] === 'NNPS') ||
+                    (taggedWord[1] === 'NNP')) {
+                  var word = taggedWord[0];
+                  var tag = taggedWord[2];
+                  result.push({
+                    word: word.toLowerCase(),
+                    tag: tag
+                  });
+                }
+                item.message.nouns = result;            
               }
-              item.message.nouns = result;            
             }
           });
         });
@@ -358,8 +363,7 @@ function search(req, res, next) {
                 response = JSON.parse(body);
               } catch(e) {
                 // error
-                cb(null);
-                return;
+                return cb(null);                
               }                    
               if ((response.data) &&
                   (response.data.translations) &&
@@ -374,8 +378,7 @@ function search(req, res, next) {
               cb(null);            
             } else {
               // error
-              cb(null);
-              return;              
+              return cb(null);              
             }
           });                              
         });         
@@ -997,8 +1000,7 @@ function search(req, res, next) {
                       if (response2) {
                         response2 = JSON.parse(response2);                  
                       } else {
-                        cb();
-                        return;
+                        return cb();
                       }
                       if (!response2.errors) {                      
                         var timestamp = Date.parse(response2.timestamp);
