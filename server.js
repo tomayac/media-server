@@ -31,6 +31,7 @@ app.configure('production', function() {
 
 var GLOBAL_config = {
   DEBUG: true,
+  TRANSLATE: false,
   MOBYPICTURE_KEY: 'TGoRMvQMAzWL2e9t',
   FLICKR_SECRET: 'a4a150addb7d59f1',
   FLICKR_KEY: 'b0f2a04baa5dd667fb181701408db162',
@@ -205,7 +206,8 @@ function search(req, res, next) {
           collector[serviceName] = [];
           service.forEach(function(item, i) {              
             var text;
-            if ((item.message.translation.text) &&
+            if ((item.message.translation) &&
+                (item.message.translation.text) &&
                 (item.message.translation.language !== 'en')) {            
               // for non-English texts, use the translation if it exists
               text = item.message.translation.text;        
@@ -287,7 +289,8 @@ function search(req, res, next) {
             
             // part of speech tagging
             var words;
-            if ((item.message.translation.text) &&
+            if ((item.message.translation) &&
+                (item.message.translation.text) &&
                 (item.message.translation.language !== 'en')) {            
               // for non-English texts, use the translation if it exists    
               words = new Lexer().lex(item.message.translation.text);
@@ -401,7 +404,11 @@ function search(req, res, next) {
         json = {};
         json[service] = temp;
       }
-      translate(json);      
+      if (GLOBAL_config.TRANSLATE) {
+        translate(json);      
+      } else {
+        spotlight(json);
+      }
     } else {
       pendingRequests[service] = json;
     }
@@ -471,10 +478,10 @@ function search(req, res, next) {
                       item.source : item.picture;
                   cleanVideoUrl(mediaUrl, function(cleanedMediaUrl) {
                     results.push({
+                      mediaurl: cleanedMediaUrl.replace(/s\.jpg$/gi, 'n.jpg'),
                       storyurl:
                           'https://www.facebook.com/permalink.php?story_fbid=' + 
-                          item.id.split(/_/)[1] + '&id=' + item.from.id,
-                      mediaurl: cleanedMediaUrl,
+                          item.id.split(/_/)[1] + '&id=' + item.from.id,                      
                       message: cleanMessage(message),
                       user:
                           'https://www.facebook.com/profile.php?id=' +
@@ -625,7 +632,9 @@ function search(req, res, next) {
                   itemStack[i].urls.forEach(function() {
                     if (locations[locationIndex]) {
                       results.push({
-                        url: locations[locationIndex],
+                        mediaurl: locations[locationIndex],
+                        storyurl: 'http://twitter.com/' +
+                            item.from_user + '/status/' + item.id_str,
                         message: message,
                         user: user,
                         type: 'micropost',
@@ -682,7 +691,8 @@ function search(req, res, next) {
                   (item.tags && Array.isArray(item.tags) ?
                       item.tags.join(', ') : '');
               results.push({
-                url: item.images.standard_resolution.url,
+                mediaurl: item.images.standard_resolution.url, 
+                storyurl: item.link,
                 message: cleanMessage(message),
                 user: 'https://api.instagram.com/v1/users/' + item.user.id,
                 type: item.type === 'image'? 'photo' : '',
@@ -920,7 +930,8 @@ function search(req, res, next) {
               var item = items[i];
               var timestamp = item.post.created_on_epoch;
               results.push({
-                url: item.post.media.url_full,
+                mediaurl: item.post.media.url_full,
+                storyurl: item.post.link,
                 message: cleanMessage(
                     item.post.title + '. ' + item.post.description),
                 user: item.user.url,
