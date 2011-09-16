@@ -185,6 +185,21 @@ function search(req, res, next) {
   }
   
   /**
+   * Scrapes Yfrog
+   */
+  function scrapeYfrog(body) {
+    try {
+      // '<image_link>'.length => 12
+      var start = body.indexOf('<image_link>') + 12;
+      var end = body.indexOf('</image_link>');                          
+      return body.substring(start, end);
+    } catch(e) {
+      console.log('Yfrog screen scraper broken');      
+      return false;
+    }
+  }
+  
+  /**
    * Annotates messages with DBpedia Spotlight
    */  
   function spotlight(json) {    
@@ -626,6 +641,13 @@ function search(req, res, next) {
                   }
                 });
                 var locationIndex = 0;
+                var numberOfUrls = 0;
+                var pendingUrls = 0;
+                for (var i = 0, len = itemStack.length; i < len; i++) {
+                  itemStack[i].urls.forEach(function() {                  
+                    numberOfUrls++;
+                  });
+                }
                 for (var i = 0, len = itemStack.length; i < len; i++) {
                   var item = itemStack[i].item;
                   var timestamp = Date.parse(item.created_at);                  
@@ -634,21 +656,77 @@ function search(req, res, next) {
                   var user = 'http://twitter.com/' + item.from_user;
                   itemStack[i].urls.forEach(function() {
                     if (locations[locationIndex]) {
-                      results.push({
-                        mediaurl: locations[locationIndex],
-                        storyurl: 'http://twitter.com/' +
-                            item.from_user + '/status/' + item.id_str,
-                        message: message,
-                        user: user,
-                        type: 'micropost',
-                        timestamp: timestamp,
-                        published: published
-                      });                          
+                      var mediaurl = locations[locationIndex];
+                      var storyurl = 'http://twitter.com/' +
+                          item.from_user + '/status/' + item.id_str;                  
+                      // yfrog                                                    
+                      if (mediaurl.indexOf('http://yfrog.com') === 0) {
+                        var id = mediaurl.replace('http://yfrog.com/', '');
+                        var options = {
+                          url: 'http://yfrog.com/api/xmlInfo?path=' + id
+                        };
+                        (function(message, user, timestamp, published) {
+                          request.get(options, function(err, result, body) {                          
+                            mediaurl = scrapeYfrog(body);
+                            results.push({
+                              mediaurl: mediaurl,
+                              storyurl: storyurl,
+                              message: message,
+                              user: user,
+                              type: 'photo',
+                              timestamp: timestamp,
+                              published: published
+                            });  
+                            pendingUrls++;           
+                            if (pendingUrls === numberOfUrls) {                                                
+                              collectResults(
+                                  results, currentService, pendingRequests);
+                            }
+                          });
+                        })(message, user, timestamp, published);
+                      // TwitPic  
+                      } else if (mediaurl.indexOf('http://twitpic.com') === 0) {                        
+                        var id = mediaurl.replace('http://twitpic.com/', '');
+                        var options = {
+                          url: 'http://twitpic.com/' + id + '/full'
+                        };
+                        (function(message, user, timestamp, published) {                        
+                          request.get(options, function(err, res, body) {
+                            jsdom.env(body, function(errors, window) {
+                              var $ = window.document; 
+                              try {
+                                mediaurl = $.getElementsByTagName('IMG')[1].src;
+                              } catch(e) {
+                                console.log('Twitpic screen scraper broken');
+                                mediaurl = false;
+                              }
+                              results.push({
+                                mediaurl: mediaurl,
+                                storyurl: storyurl,
+                                message: message,
+                                user: user,
+                                type: 'photo',
+                                timestamp: timestamp,
+                                published: published
+                              });  
+                              pendingUrls++;           
+                              if (pendingUrls === numberOfUrls) {                                                
+                                collectResults(
+                                    results, currentService, pendingRequests);
+                              }
+                            });
+                          });
+                        })(message, user, timestamp, published);                        
+                      // URL from unsupported media platform, don't consider it  
+                      } else {
+                        numberOfUrls--;
+                      }
+                    } else {
+                      numberOfUrls--;
                     }
                     locationIndex++;
                   });
-                }
-                collectResults(results, currentService, pendingRequests);
+                }                
               }
             );            
           } else {
