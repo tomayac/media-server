@@ -39,8 +39,9 @@ var GLOBAL_config = {
   FLICKR_KEY: 'b0f2a04baa5dd667fb181701408db162',
   YFROG_KEY: '89ABGHIX5300cc8f06b447103e19a201c7599962',
   INSTAGRAM_KEY: '82fe3d0649e04c2da8e38736547f9170',
-  INSTAGRAM_SECRET: '4cf97de2075c4c8fbebdde57c5f9705a',
+  INSTAGRAM_SECRET: 'b0b5316d40a74dffab16bfe3b0dfd5b6',
   GOOGLE_KEY: 'AIzaSyC5GxhDFxBHTKCLNMYtYm6o1tiagi65Ufc',
+  IMGUR_KEY: '9b7d0e62bfaacc04db0b719c998d225e',
   HEADERS: {
     "Accept": "application/json, text/javascript, */*",
     "Accept-Charset": "ISO-8859-1,utf-8;q=0.7,*;q=0.3",
@@ -63,7 +64,9 @@ var GLOBAL_config = {
     'ustre.am',
     'twitvid.com',
     'photobucket.com',
-    'pic.twitter.com'],
+    'pic.twitter.com',
+    'i.imgur.com',
+    'picasaweb.google.com'],
   URL_REGEX: /\b((?:[a-z][\w-]+:(?:\/{1,3}|[a-z0-9%])|www\d{0,3}[.]|[a-z0-9.\-]+[.][a-z]{2,4}\/)(?:[^\s()<>]+|\(([^\s()<>]+|(\([^\s()<>]+\)))*\))+(?:\(([^\s()<>]+|(\([^\s()<>]+\)))*\)|[^\s`!()\[\]{};:'".,<>?«»“”‘’]))/ig,
   HASHTAG_REGEX: /(^|\s)\#(\S+)/g,
   USER_REGEX: /(^|\W)\@([a-zA-Z0-9_]+)/g
@@ -224,7 +227,7 @@ function search(req, res, next) {
       return sendResults(json);
     }
     if (GLOBAL_config.DEBUG) console.log('spotlight');    
-    var currentService = 'spotlight';
+    var currentService = 'DBpediaSpotlight';
     var options = {
       headers: {
         "Accept": 'application/json'
@@ -456,6 +459,7 @@ function search(req, res, next) {
     if (GLOBAL_config.DEBUG) console.log('sendResults');    
     res.setHeader('Content-Type', 'application/json; charset=UTF-8');
     res.setHeader('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Headers', 'X-Requested-With');    
     if (req.query.callback) {      
       res.send(req.query.callback + '(' + JSON.stringify(json) + ')');      
     } else {
@@ -470,7 +474,7 @@ function search(req, res, next) {
 
   var services = {    
     facebook: function(pendingRequests) {      
-      var currentService = 'facebook';  
+      var currentService = 'Facebook';  
       if (GLOBAL_config.DEBUG) console.log(currentService);       
       var params = {
         q: query
@@ -542,7 +546,7 @@ function search(req, res, next) {
       });
     },
     twitter: function(pendingRequests) {
-      var currentService = 'twitter';  
+      var currentService = 'Twitter';  
       if (GLOBAL_config.DEBUG) console.log(currentService);              
       var params = {
         q: query + ' ' + GLOBAL_config.MEDIA_PLATFORMS.join(' OR ') + ' -"RT "'
@@ -737,18 +741,21 @@ function search(req, res, next) {
                         (function(message, user, timestamp, published) {                        
                           request.get(options, function(err, result, body) {
                             body = JSON.parse(body);
-                            // ficken
-                            results.push({
-                              mediaurl:
-                                  body.data.images.standard_resolution.url,
-                              storyurl: storyurl,
-                              message: message,
-                              user: user,
-                              type: 'photo',
-                              timestamp: timestamp,
-                              published: published
-                            });  
-                            pendingUrls++;           
+                            if ((body.data) && (body.data.images) &&    
+                                (body.data.images.standard_resolution ) &&
+                                (body.data.images.standard_resolution.url)) {
+                              results.push({
+                                mediaurl:
+                                    body.data.images.standard_resolution.url,
+                                storyurl: storyurl,
+                                message: message,
+                                user: user,
+                                type: 'photo',
+                                timestamp: timestamp,
+                                published: published
+                              });                                           
+                            }
+                            pendingUrls++;
                             if (pendingUrls === numberOfUrls) {                                                
                               collectResults(
                                   results, currentService, pendingRequests);
@@ -776,7 +783,7 @@ function search(req, res, next) {
       });               
     },
     instagram: function(pendingRequests) {
-      var currentService = 'instagram';     
+      var currentService = 'Instagram';     
       if (GLOBAL_config.DEBUG) console.log(currentService);           
       var params = {
         client_id: GLOBAL_config.INSTAGRAM_KEY
@@ -827,7 +834,7 @@ function search(req, res, next) {
       });                       
     },    
     youtube: function(pendingRequests) {
-      var currentService = 'youtube';   
+      var currentService = 'YouTube';   
       if (GLOBAL_config.DEBUG) console.log(currentService);             
       var params = {
         v: 2,
@@ -897,7 +904,7 @@ function search(req, res, next) {
       services.flickr(pendingRequests, true);
     },
     flickr: function(pendingRequests, videoSearch) {     
-      var currentService = videoSearch ? 'flickrvideos' : 'flickr';         
+      var currentService = videoSearch ? 'FlickrVideos' : 'Flickr';         
       if (GLOBAL_config.DEBUG) console.log(currentService);       
       var now = new Date().getTime();
       var sixDays = 86400000 * 6;
@@ -1020,7 +1027,7 @@ function search(req, res, next) {
       });
     },
     mobypicture: function(pendingRequests) {
-      var currentService = 'mobypicture';         
+      var currentService = 'MobyPicture';         
       if (GLOBAL_config.DEBUG) console.log(currentService);       
       var params = {
         key: GLOBAL_config.MOBYPICTURE_KEY,
@@ -1067,7 +1074,7 @@ function search(req, res, next) {
       });
     },
     twitpic: function(pendingRequests) {   
-      var currentService = 'twitpic';   
+      var currentService = 'TwitPic';   
       if (GLOBAL_config.DEBUG) console.log(currentService);             
       var params = {
         type: 'mixed',
