@@ -66,7 +66,8 @@ var GLOBAL_config = {
     'photobucket.com',
     'pic.twitter.com',
     'i.imgur.com',
-    'picasaweb.google.com'],
+    'picasaweb.google.com',
+    'twitgoo.com'],
   URL_REGEX: /\b((?:[a-z][\w-]+:(?:\/{1,3}|[a-z0-9%])|www\d{0,3}[.]|[a-z0-9.\-]+[.][a-z]{2,4}\/)(?:[^\s()<>]+|\(([^\s()<>]+|(\([^\s()<>]+\)))*\))+(?:\(([^\s()<>]+|(\([^\s()<>]+\)))*\)|[^\s`!()\[\]{};:'".,<>?«»“”‘’]))/ig,
   HASHTAG_REGEX: /(^|\s)\#(\S+)/g,
   USER_REGEX: /(^|\W)\@([a-zA-Z0-9_]+)/g
@@ -213,8 +214,36 @@ function search(req, res, next) {
         mediaurl = $.getElementsByTagName('IMG')[1].src;
         callback(mediaurl);
       } catch(e) {
-        console.log('Twitpic screen scraper broken');
+        console.log('TwitPic screen scraper broken');
         callback(mediaurl);
+      }
+    });    
+  } 
+
+  /**
+   * Scrapes MySpace
+   */
+  function scrapeMySpace(body, callback) {
+    var caption = false;
+    var timestamp = false;
+    jsdom.env(body, function(errors, window) {
+      var $ = window.document; 
+      try {
+        caption = $.getElementById('photoCaption').textContent;
+        var match = '"unixTime":';
+        var timeStart = (body.indexOf(match) + match.length);
+        var timeEnd = body.substring(timeStart).indexOf(',') + timeStart;
+        timestamp = parseInt(body.substring(timeStart, timeEnd) + '000', 10);
+        callback({
+          caption: caption,
+          timestamp: timestamp
+        });
+      } catch(e) {
+        console.log('MySpace screen scraper broken');
+        callback({
+          caption: caption,
+          timestamp: timestamp
+        });
       }
     });    
   } 
@@ -472,7 +501,80 @@ function search(req, res, next) {
   var service = pathname.replace(path, '$1');
   var query = decodeURIComponent(pathname.replace(path, '$2'));  
 
-  var services = {    
+  var services = {   
+    myspace: function(pendingRequests) {
+      var currentService = 'MySpace';  
+      if (GLOBAL_config.DEBUG) console.log(currentService);       
+      var params = {
+        searchTerms: query,
+        count: 10,
+        sortBy: 'recent'        
+      };
+      params = querystring.stringify(params);
+      var options = {
+        url: 'http://api.myspace.com/opensearch/images?' + params,
+        headers: GLOBAL_config.HEADERS
+      };
+      request.get(options, function(err, reply, body) {
+        var results = [];
+        body = JSON.parse(body);
+        if (body.entry && Array.isArray(body.entry)) {
+          var items = body.entry;
+          Step(
+            function() {
+              var group = this.group();                          
+              items.forEach(function(item) {
+                var cb = group();
+                var user = item.profileUrl;
+                var storyurl = user + '/photos/' + item.imageId;
+                var mediaurl = item.thumbnailUrl.replace(/m\.jpg$/, 'l.jpg');
+                var options = {
+                  url: storyurl,
+                  headers: GLOBAL_config.HEADERS
+                };
+                request.get(options, function(err, reply, body) {
+                  scrapeMySpace(body, function(scrapeResult) {                  
+                    results.push({
+                      mediaurl: mediaurl,
+                      storyurl: storyurl,                      
+                      message: cleanMessage(scrapeResult.caption),
+                      user: user,
+                      type: 'photo',
+                      timestamp: scrapeResult.timestamp,
+                      published: getIsoDateString(scrapeResult.timestamp)
+                    });                    
+                    cb(null);
+                  });
+                });
+
+              });
+            },
+            function(err) {
+              collectResults(results, currentService, pendingRequests);                
+            }
+          );            
+        } else {
+          collectResults(results, currentService, pendingRequests);                          
+        }        
+      });       
+    },
+    myspacevideos: function(pendingRequests) {
+      var currentService = 'MySpaceVideos';  
+      if (GLOBAL_config.DEBUG) console.log(currentService);       
+      var params = {
+        searchTerms: query,
+        count: 10,
+        sortBy: 'recent'        
+      };
+      params = querystring.stringify(params);
+      var options = {
+        url: 'http://api.myspace.com/opensearch/videos?' + params,
+        headers: GLOBAL_config.HEADERS
+      };
+      request.get(options, function(err, reply, body) {
+        res.send(body);
+      });       
+    },
     facebook: function(pendingRequests) {      
       var currentService = 'Facebook';  
       if (GLOBAL_config.DEBUG) console.log(currentService);       
