@@ -293,12 +293,12 @@ function search(req, res, next) {
             if (httpMethod === 'POST') {        
               options.headers['Content-Type'] =
                   'application/x-www-form-urlencoded; charset=UTF-8';              
-              options.url = 'http://spotlight.dbpedia.org/rest/annotate';
+              options.url = 'http://spotlight.dbpedia.org/dev/rest/annotate'; //'http://spotlight.dbpedia.org/rest/annotate';
               options.body =
                   'text=' + encodeURIComponent(text) + 
                   '&confidence=0.2&support=20';            
             } else {
-              options.url = 'http://spotlight.dbpedia.org/rest/annotate' +
+              options.url = 'http://spotlight.dbpedia.org/dev/rest/annotate' + // 'http://spotlight.dbpedia.org/rest/annotate' +
                   '?text=' + encodeURIComponent(text) + 
                   '&confidence=0.2&support=20';                          
             }
