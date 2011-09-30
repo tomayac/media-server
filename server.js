@@ -67,7 +67,8 @@ var GLOBAL_config = {
     'pic.twitter.com',
     'i.imgur.com',
     'picasaweb.google.com',
-    'twitgoo.com'],
+    'twitgoo.com',
+    'vimeo.com'],
   URL_REGEX: /\b((?:[a-z][\w-]+:(?:\/{1,3}|[a-z0-9%])|www\d{0,3}[.]|[a-z0-9.\-]+[.][a-z]{2,4}\/)(?:[^\s()<>]+|\(([^\s()<>]+|(\([^\s()<>]+\)))*\))+(?:\(([^\s()<>]+|(\([^\s()<>]+\)))*\)|[^\s`!()\[\]{};:'".,<>?«»“”‘’]))/ig,
   HASHTAG_REGEX: /(^|\s)\#(\S+)/g,
   USER_REGEX: /(^|\W)\@([a-zA-Z0-9_]+)/g
@@ -215,7 +216,7 @@ function search(req, res, next) {
         callback(mediaurl);
       } catch(e) {
         console.log('TwitPic screen scraper broken');
-        callback(mediaurl);
+        callback(false);
       }
     });    
   } 
@@ -230,7 +231,9 @@ function search(req, res, next) {
       var $ = window.document; 
       try {
         caption = $.getElementById('photoCaption').textContent;
-        var match = '"unixTime":';
+        body =
+            $.getElementsByTagName('body')[0].textContent.replace(/\s+/g, ' ');
+        var match = '"unixTime":';        
         var timeStart = (body.indexOf(match) + match.length);
         var timeEnd = body.substring(timeStart).indexOf(',') + timeStart;
         timestamp = parseInt(body.substring(timeStart, timeEnd) + '000', 10);
@@ -239,10 +242,13 @@ function search(req, res, next) {
           timestamp: timestamp
         });
       } catch(e) {
-        console.log('MySpace screen scraper broken');
+        // private profiles are not the fault of the scraper, everything else is
+        if (body.indexOf('Sorry, ') === -1) {        
+          console.log('MySpace screen scraper broken');
+        }
         callback({
-          caption: caption,
-          timestamp: timestamp
+          caption: false,
+          timestamp: false
         });
       }
     });    
@@ -534,15 +540,17 @@ function search(req, res, next) {
                 };
                 request.get(options, function(err, reply, body) {
                   scrapeMySpace(body, function(scrapeResult) {                  
-                    results.push({
-                      mediaurl: mediaurl,
-                      storyurl: storyurl,                      
-                      message: cleanMessage(scrapeResult.caption),
-                      user: user,
-                      type: 'photo',
-                      timestamp: scrapeResult.timestamp,
-                      published: getIsoDateString(scrapeResult.timestamp)
-                    });                    
+                    if (scrapeResult.timestamp && scrapeResult.caption) {
+                      results.push({
+                        mediaurl: mediaurl,
+                        storyurl: storyurl,                      
+                        message: cleanMessage(scrapeResult.caption),
+                        user: user,
+                        type: 'photo',
+                        timestamp: scrapeResult.timestamp,
+                        published: getIsoDateString(scrapeResult.timestamp)
+                      });                    
+                    }
                     cb(null);
                   });
                 });
@@ -791,15 +799,17 @@ function search(req, res, next) {
                         (function(message, user, timestamp, published) {
                           request.get(options, function(err, result, body) {                          
                             mediaurl = scrapeYfrog(body);
-                            results.push({
-                              mediaurl: mediaurl,
-                              storyurl: storyurl,
-                              message: message,
-                              user: user,
-                              type: 'photo',
-                              timestamp: timestamp,
-                              published: published
-                            });  
+                            if (mediaurl) {
+                              results.push({
+                                mediaurl: mediaurl,
+                                storyurl: storyurl,
+                                message: message,
+                                user: user,
+                                type: 'photo',
+                                timestamp: timestamp,
+                                published: published
+                              });  
+                            }
                             pendingUrls++;           
                             if (pendingUrls === numberOfUrls) {                                                
                               collectResults(
@@ -816,15 +826,17 @@ function search(req, res, next) {
                         (function(message, user, timestamp, published) {                        
                           request.get(options, function(err, res, body) {
                             scrapeTwitPic(body, function(mediaurl) {
-                              results.push({
-                                mediaurl: mediaurl,
-                                storyurl: storyurl,
-                                message: message,
-                                user: user,
-                                type: 'photo',
-                                timestamp: timestamp,
-                                published: published
-                              });  
+                              if (mediaurl) {
+                                results.push({
+                                  mediaurl: mediaurl,
+                                  storyurl: storyurl,
+                                  message: message,
+                                  user: user,
+                                  type: 'photo',
+                                  timestamp: timestamp,
+                                  published: published
+                                });  
+                              }
                               pendingUrls++;           
                               if (pendingUrls === numberOfUrls) {                                                
                                 collectResults(
@@ -1240,17 +1252,19 @@ function search(req, res, next) {
                         };
                         request.get(options, function(err, res, body) {
                           scrapeTwitPic(body, function(mediaUrl) {
-                            results.push({
-                              mediaurl: mediaUrl,
-                              storyurl: 'http://twitpic.com/' +
-                                  response2.short_id,
-                              message: cleanMessage(response2.message), 
-                              user: 'http://twitter.com/' +
-                                  response2.user.username,
-                              type: 'photo',
-                              timestamp: timestamp,
-                              published: getIsoDateString(timestamp)
-                            });
+                            if (mediaUrl) {
+                              results.push({
+                                mediaurl: mediaUrl,
+                                storyurl: 'http://twitpic.com/' +
+                                    response2.short_id,
+                                message: cleanMessage(response2.message), 
+                                user: 'http://twitter.com/' +
+                                    response2.user.username,
+                                type: 'photo',
+                                timestamp: timestamp,
+                                published: getIsoDateString(timestamp)
+                              });
+                            }
                             cb();                            
                           });
                         });
