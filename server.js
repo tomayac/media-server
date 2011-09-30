@@ -1066,9 +1066,14 @@ function search(req, res, next) {
                       reply2.on('end', function() {      
                         response2 = JSON.parse(response2);                
                         var tags = [];
-                        response2.photo.tags.tag.forEach(function(tag) {
-                          tags.push(tag._content);
-                        });
+                        if ((response2.photo) &&
+                            (response2.photo.tags) && 
+                            (response2.photo.tags.tag) &&
+                            (Array.isArray(response2.photo.tags.tag))) {
+                          response2.photo.tags.tag.forEach(function(tag) {
+                            tags.push(tag._content);                          
+                          });
+                        }
                         var photo2 = response2.photo;
                         var timestamp = Date.parse(photo2.dates.taken);
                         var params = {
