@@ -355,7 +355,10 @@ function search(req, res, next) {
       },
       function(err) {     
         var services = typeof(json) === 'object' ? Object.keys(json) : {};
+console.log(JSON.stringify(services))
+        
         services.forEach(function(serviceName) {          
+console.log(JSON.stringify(serviceName))          
           var service = json[serviceName];
           service.forEach(function(item, i) {  
             item.message.entities = collector[serviceName][i];
@@ -508,7 +511,7 @@ function search(req, res, next) {
   var query = decodeURIComponent(pathname.replace(path, '$2'));  
 
   var services = {   
-    myspace: function(pendingRequests) {
+    MySpace: function(pendingRequests) {
       var currentService = 'MySpace';  
       if (GLOBAL_config.DEBUG) console.log(currentService + ' *** ' + query);       
       var params = {
@@ -558,7 +561,6 @@ function search(req, res, next) {
                     cb(null);
                   });
                 });
-
               });
             },
             function(err) {
@@ -570,7 +572,8 @@ function search(req, res, next) {
         }        
       });       
     },
-    myspacevideos: function(pendingRequests) {
+    /*
+    MySpaceVideos: function(pendingRequests) {
       var currentService = 'MySpaceVideos';  
       if (GLOBAL_config.DEBUG) console.log(currentService + ' *** ' + query);       
       var params = {
@@ -587,7 +590,8 @@ function search(req, res, next) {
         res.send(body);
       });       
     },
-    facebook: function(pendingRequests) {      
+    */
+    Facebook: function(pendingRequests) {      
       var currentService = 'Facebook';  
       if (GLOBAL_config.DEBUG) console.log(currentService + ' *** ' + query);       
       var params = {
@@ -659,7 +663,7 @@ function search(req, res, next) {
         collectResults([], currentService, pendingRequests);
       });
     },
-    twitter: function(pendingRequests) {
+    Twitter: function(pendingRequests) {
       var currentService = 'Twitter';  
       if (GLOBAL_config.DEBUG) console.log(currentService + ' *** ' + query);              
       var params = {
@@ -900,7 +904,7 @@ function search(req, res, next) {
         collectResults([], currentService, pendingRequests);
       });               
     },
-    instagram: function(pendingRequests) {
+    Instagram: function(pendingRequests) {
       var currentService = 'Instagram';     
       if (GLOBAL_config.DEBUG) console.log(currentService + ' *** ' + query);           
       var params = {
@@ -951,7 +955,7 @@ function search(req, res, next) {
         collectResults([], currentService, pendingRequests);
       });                       
     },    
-    youtube: function(pendingRequests) {
+    YouTube: function(pendingRequests) {
       var currentService = 'YouTube';   
       if (GLOBAL_config.DEBUG) console.log(currentService + ' *** ' + query);             
       var params = {
@@ -1018,10 +1022,10 @@ function search(req, res, next) {
         collectResults([], currentService, pendingRequests);
       });                       
     },
-    flickrvideos: function(pendingRequests) {
-      services.flickr(pendingRequests, true);
+    FlickrVideos: function(pendingRequests) {
+      services.Flickr(pendingRequests, true);
     },
-    flickr: function(pendingRequests, videoSearch) {     
+    Flickr: function(pendingRequests, videoSearch) {     
       var currentService = videoSearch ? 'FlickrVideos' : 'Flickr';         
       if (GLOBAL_config.DEBUG) console.log(currentService + ' *** ' + query);       
       var now = new Date().getTime();
@@ -1149,7 +1153,7 @@ function search(req, res, next) {
         collectResults([], currentService, pendingRequests);
       });
     },
-    mobypicture: function(pendingRequests) {
+    MobyPicture: function(pendingRequests) {
       var currentService = 'MobyPicture';         
       if (GLOBAL_config.DEBUG) console.log(currentService + ' *** ' + query);       
       var params = {
@@ -1196,7 +1200,7 @@ function search(req, res, next) {
         collectResults([], currentService, pendingRequests);
       });
     },
-    twitpic: function(pendingRequests) {   
+    TwitPic: function(pendingRequests) {   
       var currentService = 'TwitPic';   
       if (GLOBAL_config.DEBUG) console.log(currentService + ' *** ' + query);             
       var params = {
