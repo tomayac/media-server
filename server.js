@@ -510,7 +510,7 @@ function search(req, res, next) {
   var services = {   
     myspace: function(pendingRequests) {
       var currentService = 'MySpace';  
-      if (GLOBAL_config.DEBUG) console.log(currentService);       
+      if (GLOBAL_config.DEBUG) console.log(currentService + ' *** ' + query);       
       var params = {
         searchTerms: query,
         count: 10,
@@ -568,7 +568,7 @@ function search(req, res, next) {
     },
     myspacevideos: function(pendingRequests) {
       var currentService = 'MySpaceVideos';  
-      if (GLOBAL_config.DEBUG) console.log(currentService);       
+      if (GLOBAL_config.DEBUG) console.log(currentService + ' *** ' + query);       
       var params = {
         searchTerms: query,
         count: 10,
@@ -585,7 +585,7 @@ function search(req, res, next) {
     },
     facebook: function(pendingRequests) {      
       var currentService = 'Facebook';  
-      if (GLOBAL_config.DEBUG) console.log(currentService);       
+      if (GLOBAL_config.DEBUG) console.log(currentService + ' *** ' + query);       
       var params = {
         q: query
       };
@@ -657,7 +657,7 @@ function search(req, res, next) {
     },
     twitter: function(pendingRequests) {
       var currentService = 'Twitter';  
-      if (GLOBAL_config.DEBUG) console.log(currentService);              
+      if (GLOBAL_config.DEBUG) console.log(currentService + ' *** ' + query);              
       var params = {
         q: query + ' ' + GLOBAL_config.MEDIA_PLATFORMS.join(' OR ') + ' -"RT "'
       };
@@ -898,7 +898,7 @@ function search(req, res, next) {
     },
     instagram: function(pendingRequests) {
       var currentService = 'Instagram';     
-      if (GLOBAL_config.DEBUG) console.log(currentService);           
+      if (GLOBAL_config.DEBUG) console.log(currentService + ' *** ' + query);           
       var params = {
         client_id: GLOBAL_config.INSTAGRAM_KEY
       };
@@ -949,7 +949,7 @@ function search(req, res, next) {
     },    
     youtube: function(pendingRequests) {
       var currentService = 'YouTube';   
-      if (GLOBAL_config.DEBUG) console.log(currentService);             
+      if (GLOBAL_config.DEBUG) console.log(currentService + ' *** ' + query);             
       var params = {
         v: 2,
         format: 5,
@@ -1019,7 +1019,7 @@ function search(req, res, next) {
     },
     flickr: function(pendingRequests, videoSearch) {     
       var currentService = videoSearch ? 'FlickrVideos' : 'Flickr';         
-      if (GLOBAL_config.DEBUG) console.log(currentService);       
+      if (GLOBAL_config.DEBUG) console.log(currentService + ' *** ' + query);       
       var now = new Date().getTime();
       var sixDays = 86400000 * 6;
       var params = {
@@ -1147,7 +1147,7 @@ function search(req, res, next) {
     },
     mobypicture: function(pendingRequests) {
       var currentService = 'MobyPicture';         
-      if (GLOBAL_config.DEBUG) console.log(currentService);       
+      if (GLOBAL_config.DEBUG) console.log(currentService + ' *** ' + query);       
       var params = {
         key: GLOBAL_config.MOBYPICTURE_KEY,
         action: 'searchPosts',
@@ -1194,7 +1194,7 @@ function search(req, res, next) {
     },
     twitpic: function(pendingRequests) {   
       var currentService = 'TwitPic';   
-      if (GLOBAL_config.DEBUG) console.log(currentService);             
+      if (GLOBAL_config.DEBUG) console.log(currentService + ' *** ' + query);             
       var params = {
         type: 'mixed',
         page: 1,
