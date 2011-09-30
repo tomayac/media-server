@@ -360,38 +360,42 @@ console.log(JSON.stringify(services))
         services.forEach(function(serviceName) {          
 console.log(JSON.stringify(serviceName))          
           var service = json[serviceName];
-          service.forEach(function(item, i) {  
-            item.message.entities = collector[serviceName][i];
+// FUCK. REMOVE ME!!!!
+          if (service) {
+// FUCK. REMOVE ME!!!!            
+            service.forEach(function(item, i) {  
+              item.message.entities = collector[serviceName][i];
             
-            // part of speech tagging
-            if (GLOBAL_config.PART_OF_SPEECH) {            
-              var words;
-              if ((item.message.translation) &&
-                  (item.message.translation.text) &&
-                  (item.message.translation.language !== 'en')) {            
-                // for non-English texts, use the translation if it exists    
-                words = new Lexer().lex(item.message.translation.text);
-              } else {
-                words = new Lexer().lex(item.message.clean);              
-              }  
-              var taggedWords = new POSTagger().tag(words);                        
-              var result = [];
-              for (var j = 0, len = taggedWords.length; j < len; j++) {
-                var taggedWord = taggedWords[j];
-                if ((taggedWord[1] === 'NNS') ||
-                    (taggedWord[1] === 'NNPS') ||
-                    (taggedWord[1] === 'NNP')) {
-                  var word = taggedWord[0];
-                  var tag = taggedWord[2];
-                  result.push({
-                    word: word.toLowerCase(),
-                    tag: tag
-                  });
+              // part of speech tagging
+              if (GLOBAL_config.PART_OF_SPEECH) {            
+                var words;
+                if ((item.message.translation) &&
+                    (item.message.translation.text) &&
+                    (item.message.translation.language !== 'en')) {            
+                  // for non-English texts, use the translation if it exists    
+                  words = new Lexer().lex(item.message.translation.text);
+                } else {
+                  words = new Lexer().lex(item.message.clean);              
+                }  
+                var taggedWords = new POSTagger().tag(words);                        
+                var result = [];
+                for (var j = 0, len = taggedWords.length; j < len; j++) {
+                  var taggedWord = taggedWords[j];
+                  if ((taggedWord[1] === 'NNS') ||
+                      (taggedWord[1] === 'NNPS') ||
+                      (taggedWord[1] === 'NNP')) {
+                    var word = taggedWord[0];
+                    var tag = taggedWord[2];
+                    result.push({
+                      word: word.toLowerCase(),
+                      tag: tag
+                    });
+                  }
+                  item.message.nouns = result;            
                 }
-                item.message.nouns = result;            
               }
-            }
-          });
+            });
+          }
         });
         sendResults(json);
       }  
