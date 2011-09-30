@@ -523,6 +523,10 @@ function search(req, res, next) {
       };
       request.get(options, function(err, reply, body) {
         var results = [];
+        if (reply.statusCode === 404) {
+          collectResults(results, currentService, pendingRequests);
+          return;
+        }
         body = JSON.parse(body);
         if (body.entry && Array.isArray(body.entry)) {
           var items = body.entry;
