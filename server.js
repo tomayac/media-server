@@ -199,7 +199,7 @@ function search(req, res, next) {
       var end = body.indexOf('</image_link>');                          
       return body.substring(start, end);
     } catch(e) {
-      console.log('Yfrog screen scraper broken');      
+      throw('Yfrog screen scraper broken');      
       return false;
     }
   }
@@ -215,7 +215,7 @@ function search(req, res, next) {
         mediaurl = $.getElementsByTagName('IMG')[1].src;
         callback(mediaurl);
       } catch(e) {
-        console.log('TwitPic screen scraper broken');
+        throw('TwitPic screen scraper broken');
         callback(false);
       }
     });    
@@ -227,6 +227,12 @@ function search(req, res, next) {
   function scrapeMySpace(body, callback) {
     var caption = false;
     var timestamp = false;
+    if (!body) {
+      callback({
+        caption: false,
+        timestamp: false
+      });      
+    }
     jsdom.env(body, function(errors, window) {
       var $ = window.document; 
       try {
@@ -244,7 +250,7 @@ function search(req, res, next) {
       } catch(e) {
         // private profiles are not the fault of the scraper, everything else is
         if (body.indexOf('Sorry, ') === -1) {        
-          console.log('MySpace screen scraper broken');
+          throw('MySpace screen scraper broken');
         }
         callback({
           caption: false,
@@ -277,7 +283,7 @@ function search(req, res, next) {
         var group = this.group();
         var services = typeof(json) === 'object' ? Object.keys(json) : {};
         services.forEach(function(serviceName) {                    
-          var service = json[serviceName];
+          var service = json[serviceName] || [];
           collector[serviceName] = [];
           service.forEach(function(item, i) {              
             var text;
@@ -355,47 +361,39 @@ function search(req, res, next) {
       },
       function(err) {     
         var services = typeof(json) === 'object' ? Object.keys(json) : {};
-console.log(JSON.stringify(services))
-        
         services.forEach(function(serviceName) {          
-console.log(JSON.stringify(serviceName))          
-          var service = json[serviceName];
-// FUCK. REMOVE ME!!!!
-          if (service) {
-// FUCK. REMOVE ME!!!!            
-            service.forEach(function(item, i) {  
-              item.message.entities = collector[serviceName][i];
-            
-              // part of speech tagging
-              if (GLOBAL_config.PART_OF_SPEECH) {            
-                var words;
-                if ((item.message.translation) &&
-                    (item.message.translation.text) &&
-                    (item.message.translation.language !== 'en')) {            
-                  // for non-English texts, use the translation if it exists    
-                  words = new Lexer().lex(item.message.translation.text);
-                } else {
-                  words = new Lexer().lex(item.message.clean);              
-                }  
-                var taggedWords = new POSTagger().tag(words);                        
-                var result = [];
-                for (var j = 0, len = taggedWords.length; j < len; j++) {
-                  var taggedWord = taggedWords[j];
-                  if ((taggedWord[1] === 'NNS') ||
-                      (taggedWord[1] === 'NNPS') ||
-                      (taggedWord[1] === 'NNP')) {
-                    var word = taggedWord[0];
-                    var tag = taggedWord[2];
-                    result.push({
-                      word: word.toLowerCase(),
-                      tag: tag
-                    });
-                  }
-                  item.message.nouns = result;            
+          var service = json[serviceName] || [];
+          service.forEach(function(item, i) {  
+            item.message.entities = collector[serviceName][i];     
+            // part of speech tagging
+            if (GLOBAL_config.PART_OF_SPEECH) {            
+              var words;
+              if ((item.message.translation) &&
+                  (item.message.translation.text) &&
+                  (item.message.translation.language !== 'en')) {            
+                // for non-English texts, use the translation if it exists    
+                words = new Lexer().lex(item.message.translation.text);
+              } else {
+                words = new Lexer().lex(item.message.clean);              
+              }  
+              var taggedWords = new POSTagger().tag(words);                        
+              var result = [];
+              for (var j = 0, len = taggedWords.length; j < len; j++) {
+                var taggedWord = taggedWords[j];
+                if ((taggedWord[1] === 'NNS') ||
+                    (taggedWord[1] === 'NNPS') ||
+                    (taggedWord[1] === 'NNP')) {
+                  var word = taggedWord[0];
+                  var tag = taggedWord[2];
+                  result.push({
+                    word: word.toLowerCase(),
+                    tag: tag
+                  });
                 }
+                item.message.nouns = result;            
               }
-            });
-          }
+            }
+          });
         });
         sendResults(json);
       }  
@@ -423,7 +421,7 @@ console.log(JSON.stringify(serviceName))
         var services = typeof(json) === 'object' ? Object.keys(json) : {};
         services.forEach(function(serviceName) {          
           var cb = group();                    
-          var service = json[serviceName];
+          var service = json[serviceName] || [];
           collector[serviceName] = [];
           service.forEach(function(item, i) {  
             var text = item.message.clean;        
@@ -463,7 +461,7 @@ console.log(JSON.stringify(serviceName))
       function(err) {   
         var services = typeof(json) === 'object' ? Object.keys(json) : {};
         services.forEach(function(serviceName) {          
-          var service = json[serviceName];
+          var service = json[serviceName] || [];
           service.forEach(function(item, i) {  
             item.message.translation = collector[serviceName][i];
           });
@@ -477,7 +475,7 @@ console.log(JSON.stringify(serviceName))
    * Collects results to be sent back to the client
    */
   function collectResults(json, service, pendingRequests) {
-    if (GLOBAL_config.DEBUG) console.log('collectResults');    
+    if (GLOBAL_config.DEBUG) console.log('collectResults for ' + service);    
     if (!pendingRequests) {
       if (service !== 'combined') {
         var temp = json;
@@ -1321,6 +1319,7 @@ console.log(JSON.stringify(serviceName))
       passedTime += intervalTimeout;
       for (var i = 0; i < length; i++) {
         if (passedTime >= timeout) {
+          if (GLOBAL_config.DEBUG) console.log('Timeout');    
           break;
         }
         if (pendingRequests[serviceNames[i]] === false) {
