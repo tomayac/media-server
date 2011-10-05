@@ -71,7 +71,9 @@ var GLOBAL_config = {
     'vimeo.com'],
   URL_REGEX: /\b((?:[a-z][\w-]+:(?:\/{1,3}|[a-z0-9%])|www\d{0,3}[.]|[a-z0-9.\-]+[.][a-z]{2,4}\/)(?:[^\s()<>]+|\(([^\s()<>]+|(\([^\s()<>]+\)))*\))+(?:\(([^\s()<>]+|(\([^\s()<>]+\)))*\)|[^\s`!()\[\]{};:'".,<>?«»“”‘’]))/ig,
   HASHTAG_REGEX: /(^|\s)\#(\S+)/g,
-  USER_REGEX: /(^|\W)\@([a-zA-Z0-9_]+)/g
+  USER_REGEX: /(^|\W)\@([a-zA-Z0-9_]+)/g,
+  PLUS_REGEX: /(^|\W)\+([a-zA-Z0-9_]+)/g,
+  TAG_REGEX: /<\/?([a-z][a-z0-9]*)\b[^>]*>/gi
 };
 
 app.get(/^\/search\/(.+)\/(.+)$/, search);
@@ -175,13 +177,28 @@ function search(req, res, next) {
    * Removes line breaks, double spaces, etc.
    */
   function cleanMessage(message) {
-    if (message) {
-      message = message.replace(/[\n\r\t]/gi, ' ').replace(/\s+/g, ' ');
+    if (message) {      
+      // trim
+      message = message.replace(/^\s+|\s+$/, '');
+      // replace html entities
       message = replaceHtmlEntities(message);
-      var cleanMessage = message.replace(GLOBAL_config.URL_REGEX, ' ');      
+      // remove HTML tags. regular expression stolen from 
+      // https://raw.github.com/kvz/phpjs/master/functions/strings/strip_tags.js
+      var cleanMessage = message.replace(GLOBAL_config.TAG_REGEX, '');
+      // replace line feeds and duplicate spaces
+      message = message.replace(/[\n\r\t]/gi, ' ').replace(/\s+/g, ' ');            
+      //all regular expressions below stolen from
+      // https://raw.github.com/cramforce/streamie/master/public/lib/stream/-
+      // streamplugins.js
+      //
+      // remove urls
+      cleanMessage = cleanMessage.replace(GLOBAL_config.URL_REGEX, ' ');      
+      // simplify #hashtags to hashtags
       cleanMessage = cleanMessage.replace(GLOBAL_config.HASHTAG_REGEX, ' $2');
-      cleanMessage = cleanMessage.replace(GLOBAL_config.USER_REGEX, ' $2');
-      cleanMessage = cleanMessage.replace(/\s+/g, ' ');
+      // simplify @username to username
+      cleanMessage = cleanMessage.replace(GLOBAL_config.USER_REGEX, ' $2');      
+      // simplify +username to username
+      cleanMessage = cleanMessage.replace(GLOBAL_config.PLUS_REGEX, ' $2');            
       return {
         text: message,
         clean: cleanMessage
@@ -523,7 +540,47 @@ function search(req, res, next) {
         headers: GLOBAL_config.HEADERS
       };
       request.get(options, function(err, reply, body) {
-        res.send(body);
+        body = JSON.parse(body);
+        var results = [];
+        if (body.items && Array.isArray(body.items)) {
+          body.items.forEach(function(item) {
+            // only treat posts and shares, no check-ins
+            if (((item.verb === 'share') || (item.verb === 'post')) &&
+                (item.object.attachments) &&
+                (Array.isArray(item.object.attachments))) {
+              item.object.attachments.forEach(function(attachment) {    
+                if ((attachment.objectType !== 'photo') &&
+                    (attachment.objectType !== 'video')) {
+                  return;
+                }
+                var message = cleanMessage(
+                    (item.object.content ?
+                        item.object.content : '') +
+                    (item.title ?
+                        ' ' + item.title : '') +    
+                    (item.annotation ?
+                        ' ' + item.annotation : '') +
+                    (attachment.displayName ?
+                        ' ' + attachment.displayName : ''));
+                if (message) {        
+                  results.push({
+                    mediaurl: (attachment.fullImage ?
+                        attachment.fullImage.url : attachment.embed),
+                    storyurl: item.url,                      
+                    message: message,
+                    user: item.actor.url,
+                    type: attachment.objectType,
+                    timestamp: (new Date(item.published)).getTime(),
+                    published: item.published
+                  });                    
+                }
+              });
+            }
+          });
+          collectResults(results, currentService, pendingRequests);                                    
+        } else {
+          collectResults(results, currentService, pendingRequests);                          
+        }
       });       
     },
     MySpace: function(pendingRequests) {
