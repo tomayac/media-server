@@ -513,6 +513,19 @@ function search(req, res, next) {
   var query = decodeURIComponent(pathname.replace(path, '$2'));  
 
   var services = {   
+    GooglePlus: function(pendingRequests) {
+      var currentService = 'GooglePlus';
+      if (GLOBAL_config.DEBUG) console.log(currentService + ' *** ' + query);       
+      var options = {
+        url: 'https://www.googleapis.com/plus/v1/activities?query=' +
+            encodeURIComponent(query) +
+            '&orderBy=recent&key=' + GLOBAL_config.GOOGLE_KEY,
+        headers: GLOBAL_config.HEADERS
+      };
+      request.get(options, function(err, reply, body) {
+        res.send(body);
+      });       
+    },
     MySpace: function(pendingRequests) {
       var currentService = 'MySpace';  
       if (GLOBAL_config.DEBUG) console.log(currentService + ' *** ' + query);       
