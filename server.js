@@ -7,7 +7,7 @@ var jsdom = require('jsdom');
 var Step = require('./step.js');
 var Uri = require('./uris.js');
 
-// jspos
+// jspos, Part of Speech tagging
 var Lexer = require('./jspos/lexer.js');
 var POSTagger = require('./jspos/POSTagger.js');
 
@@ -33,7 +33,7 @@ var GLOBAL_config = {
   DEBUG: true,
   TRANSLATE: false,
   PART_OF_SPEECH: false,
-  NAMED_ENTITY_EXTRACTION: true,
+  NAMED_ENTITY_EXTRACTION: false,
   MOBYPICTURE_KEY: 'TGoRMvQMAzWL2e9t',
   FLICKR_SECRET: 'a4a150addb7d59f1',
   FLICKR_KEY: 'b0f2a04baa5dd667fb181701408db162',
@@ -78,7 +78,8 @@ var GLOBAL_config = {
 
 app.get(/^\/search\/(.+)\/(.+)$/, search);
 
-function search(req, res, next) {  
+function search(req, res, next) { 
+   
   /** 
    * Stolen from https://developer.mozilla.org/en/JavaScript/Reference/Global_-
    * Objects/Date#Example:_ISO_8601_formatted_dates
@@ -166,21 +167,19 @@ function search(req, res, next) {
   function replaceHtmlEntities(message) {
     message = message.replace(/&quot;/gi, '\"');      
     message = message.replace(/&apos;/gi, '\'');      
+    message = message.replace(/&#39;/gi, '\'');      
     message = message.replace(/&amp;/gi, '&');  
     message = message.replace(/&gt;/gi, '>');  
     message = message.replace(/&lt;/gi, '<');  
-    message = message.replace(/&#39;/gi, '\'');  
     return message;    
   }
 
   /**
-   * Removes line breaks, double spaces, etc.
+   * Removes line breaks, double spaces, HTML tags, HTML entities, etc.
    */
   function cleanMessage(message) {
     if (message) {      
-      // trim
-      message = message.replace(/^\s+|\s+$/, '');
-      // replace html entities
+      // replace HTML entities
       message = replaceHtmlEntities(message);
       // remove HTML tags. regular expression stolen from 
       // https://raw.github.com/kvz/phpjs/master/functions/strings/strip_tags.js
@@ -200,8 +199,8 @@ function search(req, res, next) {
       // simplify +username to username
       cleanMessage = cleanMessage.replace(GLOBAL_config.PLUS_REGEX, ' $2');            
       return {
-        text: message,
-        clean: cleanMessage
+        text: message.replace(/^\s+|\s+$/, ''), // trim
+        clean: cleanMessage.replace(/^\s+|\s+$/, '') // trim
       };          
     }
   }
@@ -211,12 +210,13 @@ function search(req, res, next) {
    */
   function scrapeYfrog(body) {
     try {
-      // '<image_link>'.length => 12
-      var start = body.indexOf('<image_link>') + 12;
-      var end = body.indexOf('</image_link>');                          
+      var scraperTag = '<image_link>';
+      var scraperTagLength = scraperTag.length;
+      var start = body.indexOf(scraperTag) + scraperTagLength;
+      var end = body.indexOf(scraperTag);                          
       return body.substring(start, end);
     } catch(e) {
-      throw('Yfrog screen scraper broken');      
+      throw('ERROR: Yfrog screen scraper broken');      
       return false;
     }
   }
@@ -231,10 +231,12 @@ function search(req, res, next) {
       try {
         mediaurl = $.getElementsByTagName('IMG')[1].src;
         callback(mediaurl);
-      } catch(e) {
-        throw('TwitPic screen scraper broken');
-        callback(false);
-      }
+      } catch(e) { 
+        if (body.indexOf('error') === -1) {        
+          throw('ERROR: TwitPic screen scraper broken');          
+        }
+        callback(false);          
+      }  
     });    
   } 
 
@@ -267,7 +269,7 @@ function search(req, res, next) {
       } catch(e) {
         // private profiles are not the fault of the scraper, everything else is
         if (body.indexOf('Sorry, ') === -1) {        
-          throw('MySpace screen scraper broken');
+          throw('ERROR: MySpace screen scraper broken');
         }
         callback({
           caption: false,
@@ -293,12 +295,12 @@ function search(req, res, next) {
       body: ''     
     };  
     var collector = {};
-    var httpMethod = 'POST';
+    var httpMethod = 'POST' // 'GET';
     options.method = httpMethod;
     Step(
       function() {
         var group = this.group();
-        var services = typeof(json) === 'object' ? Object.keys(json) : {};
+        var services = typeof json === 'object' ? Object.keys(json) : [];
         services.forEach(function(serviceName) {                    
           var service = json[serviceName] || [];
           collector[serviceName] = [];
@@ -315,13 +317,15 @@ function search(req, res, next) {
             } 
             if (httpMethod === 'POST') {        
               options.headers['Content-Type'] =
-                  'application/x-www-form-urlencoded; charset=UTF-8';              
-              options.url = 'http://spotlight.dbpedia.org/dev/rest/annotate'; //'http://spotlight.dbpedia.org/rest/annotate';
+                  'application/x-www-form-urlencoded; charset=UTF-8';        
+              // non-testing env: 'http://spotlight.dbpedia.org/rest/annotate';                        
+              options.url = 'http://spotlight.dbpedia.org/dev/rest/annotate';              
               options.body =
                   'text=' + encodeURIComponent(text) + 
                   '&confidence=0.2&support=20';            
             } else {
-              options.url = 'http://spotlight.dbpedia.org/dev/rest/annotate' + // 'http://spotlight.dbpedia.org/rest/annotate' +
+              // non-testing env: 'http://spotlight.dbpedia.org/rest/annotate' +
+              options.url = 'http://spotlight.dbpedia.org/dev/rest/annotate' + 
                   '?text=' + encodeURIComponent(text) + 
                   '&confidence=0.2&support=20';                          
             }
@@ -345,7 +349,7 @@ function search(req, res, next) {
                 if (response.Resources) {                
                   var uris = {};
                   var resources = response.Resources;
-                  for (var j = 0, len2 = resources.length; j < len2; j++) {
+                  for (var j = 0, len = resources.length; j < len; j++) {
                     var entity = resources[j];              
                     // the value of entity['@URI'] is not unique, but we only
                     // need it once, we simply don't care about the other
@@ -377,12 +381,12 @@ function search(req, res, next) {
         });         
       },
       function(err) {     
-        var services = typeof(json) === 'object' ? Object.keys(json) : {};
+        var services = typeof json === 'object' ? Object.keys(json) : [];
         services.forEach(function(serviceName) {          
           var service = json[serviceName] || [];
           service.forEach(function(item, i) {  
             item.message.entities = collector[serviceName][i];     
-            // part of speech tagging
+            // part of speech tagging, PoS
             if (GLOBAL_config.PART_OF_SPEECH) {            
               var words;
               if ((item.message.translation) &&
@@ -397,6 +401,7 @@ function search(req, res, next) {
               var result = [];
               for (var j = 0, len = taggedWords.length; j < len; j++) {
                 var taggedWord = taggedWords[j];
+                // for all recognized noun types
                 if ((taggedWord[1] === 'NNS') ||
                     (taggedWord[1] === 'NNPS') ||
                     (taggedWord[1] === 'NNP')) {
@@ -435,7 +440,7 @@ function search(req, res, next) {
     Step(
       function() {
         var group = this.group();
-        var services = typeof(json) === 'object' ? Object.keys(json) : {};
+        var services = typeof json === 'object' ? Object.keys(json) : [];
         services.forEach(function(serviceName) {          
           var cb = group();                    
           var service = json[serviceName] || [];
@@ -476,7 +481,7 @@ function search(req, res, next) {
         });         
       },
       function(err) {   
-        var services = typeof(json) === 'object' ? Object.keys(json) : {};
+        var services = typeof json === 'object' ? Object.keys(json) : [];
         services.forEach(function(serviceName) {          
           var service = json[serviceName] || [];
           service.forEach(function(item, i) {  
@@ -499,6 +504,14 @@ function search(req, res, next) {
         json = {};
         json[service] = temp;
       }
+      // make sure that after a timeout, where a service's result can still be
+      // the initial value of boolean false, we set the value to empty array
+      var services = typeof json === 'object' ? Object.keys(json) : [];
+      services.forEach(function(serviceName) {          
+        if (json[serviceName] === false) {
+          json[serviceName] = [];
+        }
+      });
       if (GLOBAL_config.TRANSLATE) {
         translate(json);      
       } else {
@@ -524,6 +537,7 @@ function search(req, res, next) {
     }    
   }
     
+  // actual code begins, up to here we only had helper functions
   var path = /^\/search\/(.+)\/(.+)$/;
   var pathname = require('url').parse(req.url).pathname;
   var service = pathname.replace(path, '$1');
@@ -549,10 +563,13 @@ function search(req, res, next) {
                 (item.object.attachments) &&
                 (Array.isArray(item.object.attachments))) {
               item.object.attachments.forEach(function(attachment) {    
+                // only treat photos and videos, skip articles
                 if ((attachment.objectType !== 'photo') &&
                     (attachment.objectType !== 'video')) {
                   return;
                 }
+                // the message can consist of different parts, dependent on the
+                // item type
                 var message = cleanMessage(
                     (item.object.content ?
                         item.object.content : '') +
@@ -598,6 +615,7 @@ function search(req, res, next) {
       };
       request.get(options, function(err, reply, body) {
         var results = [];
+        // when no results are found, the MySpace API returns 404
         if (reply.statusCode === 404) {
           collectResults(results, currentService, pendingRequests);
           return;
@@ -671,68 +689,58 @@ function search(req, res, next) {
       };
       params = querystring.stringify(params);
       var options = {
-        host: 'graph.facebook.com',
-        port: 443,
-        path: '/search?' + params + '&type=post',
+        url: 'https://graph.facebook.com/search?' + params + '&type=post',
         headers: GLOBAL_config.HEADERS
       };
-      https.get(options, function(reply) { 
-        var response = '';
-        reply.on('data', function(chunk) {
-          response += chunk;
-        });
-        reply.on('end', function() {   
-          response = JSON.parse(response);
-          var results = [];
-          if ((response.data) && (response.data.length)) {
-            var items = response.data;
-            Step(
-              function() {
-                var group = this.group();            
-                items.forEach(function(item) {
-                  if (item.type !== 'photo' && item.type !== 'video') {
-                    return;
-                  }
-                  var cb = group();
-                  var timestamp = Date.parse(item.created_time);
-                  var message = '';
-                  message += (item.name ? item.name : '');
-                  message += (item.caption ?
-                      (message.length ? '. ' : '') + item.caption : '');
-                  message += (item.description ?
-                      (message.length ? '. ' : '') + item.description : '');
-                  message += (item.message ?
-                      (message.length ? '. ' : '') + item.message : '');                            
-                  var mediaUrl = item.type === 'video' ?
-                      item.source : item.picture;
-                  cleanVideoUrl(mediaUrl, function(cleanedMediaUrl) {
-                    results.push({
-                      mediaurl: cleanedMediaUrl.replace(/s\.jpg$/gi, 'n.jpg'),
-                      storyurl:
-                          'https://www.facebook.com/permalink.php?story_fbid=' + 
-                          item.id.split(/_/)[1] + '&id=' + item.from.id,                      
-                      message: cleanMessage(message),
-                      user:
-                          'https://www.facebook.com/profile.php?id=' +
-                          item.from.id,
-                      type: item.type,
-                      timestamp: timestamp,
-                      published: getIsoDateString(timestamp)
-                    });
-                    cb(null);
+      request.get(options, function(err, reply, body) { 
+        body = JSON.parse(body);
+        var results = [];
+        if ((body.data) && (body.data.length)) {
+          var items = body.data;
+          Step(
+            function() {
+              var group = this.group();            
+              items.forEach(function(item) {
+                if (item.type !== 'photo' && item.type !== 'video') {
+                  return;
+                }
+                var cb = group();
+                var timestamp = Date.parse(item.created_time);
+                var message = '';
+                message += (item.name ? item.name : '');
+                message += (item.caption ?
+                    (message.length ? '. ' : '') + item.caption : '');
+                message += (item.description ?
+                    (message.length ? '. ' : '') + item.description : '');
+                message += (item.message ?
+                    (message.length ? '. ' : '') + item.message : '');                            
+                var mediaUrl = item.type === 'video' ?
+                    item.source : item.picture;
+                cleanVideoUrl(mediaUrl, function(cleanedMediaUrl) {
+                  results.push({
+                    mediaurl: cleanedMediaUrl.replace(/s\.jpg$/gi, 'n.jpg'),
+                    storyurl:
+                        'https://www.facebook.com/permalink.php?story_fbid=' + 
+                        item.id.split(/_/)[1] + '&id=' + item.from.id,                      
+                    message: cleanMessage(message),
+                    user:
+                        'https://www.facebook.com/profile.php?id=' +
+                        item.from.id,
+                    type: item.type,
+                    timestamp: timestamp,
+                    published: getIsoDateString(timestamp)
                   });
+                  cb(null);
                 });
-              },
-              function(err) {
-                collectResults(results, currentService, pendingRequests);                
-              }
-            );              
-          } else {
-            collectResults(results, currentService, pendingRequests);                            
-          }          
-        });
-      }).on('error', function(e) {
-        collectResults([], currentService, pendingRequests);
+              });
+            },
+            function(err) {
+              collectResults(results, currentService, pendingRequests);                
+            }
+          );              
+        } else {
+          collectResults(results, currentService, pendingRequests);                            
+        }          
       });
     },
     Twitter: function(pendingRequests) {
@@ -743,142 +751,139 @@ function search(req, res, next) {
       };
       params = querystring.stringify(params);
       var options = {
-        host: 'search.twitter.com',
-        port: 80,
-        path: '/search.json?' + params,
+        url: 'http://search.twitter.com/search.json?' + params,
         headers: GLOBAL_config.HEADERS
       };
-      http.get(options, function(reply) { 
-        var response = '';
-        reply.on('data', function(chunk) {
-          response += chunk;
-        });
-        reply.on('end', function() {   
-          response = JSON.parse(response);
-          var results = [];
-          if ((response.results) && (response.results.length)) {
-            var items = response.results;
-            var itemStack = [];            
-            for (var i = 0, len = items.length; i < len; i++) {
-              var item = items[i];
-              // extract all URLs form a tweet
-              var urls = [];
-              text = item.text.replace(GLOBAL_config.URL_REGEX, function(url) {
-                var targetURL = (/^\w+\:\//.test(url) ? '' : 'http://') + url;
-                urls.push(targetURL);
-              });              
-              // for each URL prepare the options object
-              var optionsStack = [];                    
-              for (var j = 0, len2 = urls.length; j < len2; j++) {
-                var url = urls[j];
-                var urlObj = new Uri(url);
-                var options = {
-                  host: urlObj.heirpart().authority().host(),
-                  method: 'HEAD',
-                  port: (url.indexOf('https') === 0 ? 443 : 80),
-                  path: urlObj.heirpart().path() +
-                      (urlObj.querystring() ? urlObj.querystring() : '') +
-                      (urlObj.fragment() ? urlObj.fragment() : ''),
-                  headers: GLOBAL_config.HEADERS
-                };
-                optionsStack[j] = options;
-              }              
-              itemStack[i] = {
-                urls: urls,
-                options: optionsStack,
-                item: item                
+      request.get(options, function(err, reply, body) { 
+        body = JSON.parse(body);
+        var results = [];
+        if ((body.results) && (body.results.length)) {
+          var items = body.results;
+          var itemStack = [];            
+          for (var i = 0, len = items.length; i < len; i++) {
+            var item = items[i];
+            // extract all URLs form a tweet
+            var urls = [];
+            text = item.text.replace(GLOBAL_config.URL_REGEX, function(url) {
+              var targetURL = (/^\w+\:\//.test(url) ? '' : 'http://') + url;
+              urls.push(targetURL);
+            });              
+            // for each URL prepare the options object
+            var optionsStack = [];                    
+            for (var j = 0, len2 = urls.length; j < len2; j++) {
+              var options = {
+                url: urls[j],
+                followRedirect: false,
+                headers: GLOBAL_config.HEADERS
               };
-            }
-            // for each tweet retrieve all URLs and try to expand shortend URLs
-            Step(            
-              function() {              
-                var group = this.group();
-                itemStack.forEach(function (obj) {
-                  obj.options.forEach(function(options) {
-                    var cb = group();
-                    if (options.port === 80) {
-                      var url = 'http://' + options.host + options.path;    
-                      http.get(options, function(reply2) {
-                        cb(null, {
-                          req: reply2,
-                          url: url
-                        });
-                      }).on('error', function(e) {
-                        cb(null, {
-                          req: null,
-                          url: url
-                        });
-                      });                    
-                    } else if (options.port === 443) {
-                      var url = 'https://' + options.host + options.path;    
-                      https.get(options, function(reply2) {
-                        cb(null, {
-                          req: reply2,
-                          url: url
-                        });
-                      }).on('error', function(e) {
-                        cb(null, {
-                          req: null,
-                          url: url
-                        });
-                      });                                          
-                    }  
-                  });
-                });       
-              },     
-              function(err, replies) { 
-                /**
-                 * Checks if a URL is one of the media platform URLs
-                 */
-                function checkForValidUrl(url) {
-                  var host = new Uri(url).heirpart().authority().host();
-                  return GLOBAL_config.MEDIA_PLATFORMS.indexOf(host) !== -1;
-                }
-                var locations = [];
-                replies.forEach(function(thing, i) {
-                  if ((thing.req.statusCode === 301) ||
-                      (thing.req.statusCode === 302)) {    
-                    if (checkForValidUrl(thing.req.headers.location)) {    
-                      locations.push(thing.req.headers.location);
-                    } else {
-                      locations.push(false);
-                    }
-                  } else {
-                    if (checkForValidUrl(thing.url)) {    
-                      locations.push(thing.url);
-                    } else {
-                      locations.push(false);
-                    }
-                  }
+              optionsStack[j] = options;
+            }              
+            itemStack[i] = {
+              urls: urls,
+              options: optionsStack,
+              item: item                
+            };
+          }
+          // for each tweet retrieve all URLs and try to expand shortend URLs
+          Step(                     
+            function() {                            
+              var group = this.group();
+              itemStack.forEach(function (obj) {
+                obj.options.forEach(function(options) {
+                  var cb = group();
+                  request.get(options, function(err, reply2) {                                    
+                    cb(null, {
+                      req: {
+                        statusCode: reply2.statusCode,
+                        location: (reply2.headers.location ?
+                            reply2.headers.location : '')
+                      },
+                      url: options.url
+                    });
+                  })
                 });
-                var locationIndex = 0;
-                var numberOfUrls = 0;
-                var pendingUrls = 0;
-                for (var i = 0, len = itemStack.length; i < len; i++) {
-                  itemStack[i].urls.forEach(function() {                  
-                    numberOfUrls++;
-                  });
+              });       
+            },     
+            function(err, replies) { 
+              /**
+               * Checks if a URL is one of the media platform URLs
+               */
+              function checkForValidUrl(url) {
+                var host = new Uri(url).heirpart().authority().host();
+                return GLOBAL_config.MEDIA_PLATFORMS.indexOf(host) !== -1;
+              }
+              var locations = [];
+              replies.forEach(function(thing, i) {
+                if ((thing.req.statusCode === 301) ||
+                    (thing.req.statusCode === 302)) {    
+                  if (checkForValidUrl(thing.req.location)) {    
+                    locations.push(thing.req.location);
+                  } else {
+                    locations.push(false);
+                  }
+                } else {
+                  if (checkForValidUrl(thing.url)) {    
+                    locations.push(thing.url);
+                  } else {
+                    locations.push(false);
+                  }
                 }
-                for (var i = 0, len = itemStack.length; i < len; i++) {
-                  var item = itemStack[i].item;
-                  var timestamp = Date.parse(item.created_at);                  
-                  var published = getIsoDateString(timestamp)
-                  var message = cleanMessage(item.text);
-                  var user = 'http://twitter.com/' + item.from_user;
-                  itemStack[i].urls.forEach(function() {
-                    if (locations[locationIndex]) {
-                      var mediaurl = locations[locationIndex];
-                      var storyurl = 'http://twitter.com/' +
-                          item.from_user + '/status/' + item.id_str;                  
-                      // yfrog                                                    
-                      if (mediaurl.indexOf('http://yfrog.com') === 0) {
-                        var id = mediaurl.replace('http://yfrog.com/', '');
-                        var options = {
-                          url: 'http://yfrog.com/api/xmlInfo?path=' + id
-                        };
-                        (function(message, user, timestamp, published) {
-                          request.get(options, function(err, result, body) {                          
-                            mediaurl = scrapeYfrog(body);
+              });        
+              var locationIndex = 0;
+              var numberOfUrls = 0;
+              var pendingUrls = 0;
+              for (var i = 0, len = itemStack.length; i < len; i++) {
+                itemStack[i].urls.forEach(function() {                  
+                  numberOfUrls++;
+                });
+              }
+              for (var i = 0, len = itemStack.length; i < len; i++) {
+                var item = itemStack[i].item;
+                var timestamp = Date.parse(item.created_at);                  
+                var published = getIsoDateString(timestamp)
+                var message = cleanMessage(item.text);
+                var user = 'http://twitter.com/' + item.from_user;
+                itemStack[i].urls.forEach(function() {
+                  if (locations[locationIndex]) {
+                    var mediaurl = locations[locationIndex];
+                    var storyurl = 'http://twitter.com/' +
+                        item.from_user + '/status/' + item.id_str;                  
+                    // yfrog                                                    
+                    if (mediaurl.indexOf('http://yfrog.com') === 0) {
+                      var id = mediaurl.replace('http://yfrog.com/', '');
+                      var options = {
+                        url: 'http://yfrog.com/api/xmlInfo?path=' + id
+                      };
+                      (function(message, user, timestamp, published) {
+                        request.get(options, function(err, result, body) {                          
+                          mediaurl = scrapeYfrog(body);
+                          if (mediaurl) {
+                            results.push({
+                              mediaurl: mediaurl,
+                              storyurl: storyurl,
+                              message: message,
+                              user: user,
+                              type: 'photo',
+                              timestamp: timestamp,
+                              published: published
+                            });  
+                          }
+                          pendingUrls++;           
+                          if (pendingUrls === numberOfUrls) {                                                
+                            collectResults(
+                                results, currentService, pendingRequests);
+                          }
+                        });
+                      })(message, user, timestamp, published);
+                    // TwitPic  
+                    } else if (mediaurl.indexOf('http://twitpic.com') === 0) {                        
+                      var id = mediaurl.replace('http://twitpic.com/', '');
+                      var options = {
+                        url: 'http://twitpic.com/' + id + '/full'
+                      };
+                      (function(message, user, timestamp, published) {                        
+                        request.get(options, function(err, res, body) {
+                          scrapeTwitPic(body, function(mediaurl) {
                             if (mediaurl) {
                               results.push({
                                 mediaurl: mediaurl,
@@ -894,86 +899,56 @@ function search(req, res, next) {
                             if (pendingUrls === numberOfUrls) {                                                
                               collectResults(
                                   results, currentService, pendingRequests);
-                            }
-                          });
-                        })(message, user, timestamp, published);
-                      // TwitPic  
-                      } else if (mediaurl.indexOf('http://twitpic.com') === 0) {                        
-                        var id = mediaurl.replace('http://twitpic.com/', '');
-                        var options = {
-                          url: 'http://twitpic.com/' + id + '/full'
-                        };
-                        (function(message, user, timestamp, published) {                        
-                          request.get(options, function(err, res, body) {
-                            scrapeTwitPic(body, function(mediaurl) {
-                              if (mediaurl) {
-                                results.push({
-                                  mediaurl: mediaurl,
-                                  storyurl: storyurl,
-                                  message: message,
-                                  user: user,
-                                  type: 'photo',
-                                  timestamp: timestamp,
-                                  published: published
-                                });  
-                              }
-                              pendingUrls++;           
-                              if (pendingUrls === numberOfUrls) {                                                
-                                collectResults(
-                                    results, currentService, pendingRequests);
-                              }                              
-                            });                            
-                          });
-                        })(message, user, timestamp, published);                        
-                      // Instagram  
-                      } else if (mediaurl.indexOf('http://instagr.am') === 0) {                        
-                        var id = mediaurl.replace('http://instagr.am/p/', '');
-                        var options = {
-                          url: 'https://api.instagram.com/v1/media/' + id + 
-                              '?access_token=' + GLOBAL_config.INSTAGRAM_KEY
-                        };
-                        (function(message, user, timestamp, published) {                        
-                          request.get(options, function(err, result, body) {
-                            body = JSON.parse(body);
-                            if ((body.data) && (body.data.images) &&    
-                                (body.data.images.standard_resolution ) &&
-                                (body.data.images.standard_resolution.url)) {
-                              results.push({
-                                mediaurl:
-                                    body.data.images.standard_resolution.url,
-                                storyurl: storyurl,
-                                message: message,
-                                user: user,
-                                type: 'photo',
-                                timestamp: timestamp,
-                                published: published
-                              });                                           
-                            }
-                            pendingUrls++;
-                            if (pendingUrls === numberOfUrls) {                                                
-                              collectResults(
-                                  results, currentService, pendingRequests);
                             }                              
-                          });
-                        })(message, user, timestamp, published);                                                
-                      // URL from unsupported media platform, don't consider it  
-                      } else {
-                        numberOfUrls--;
-                      }
+                          });                            
+                        });
+                      })(message, user, timestamp, published);                        
+                    // Instagram  
+                    } else if (mediaurl.indexOf('http://instagr.am') === 0) {                        
+                      var id = mediaurl.replace('http://instagr.am/p/', '');
+                      var options = {
+                        url: 'https://api.instagram.com/v1/media/' + id + 
+                            '?access_token=' + GLOBAL_config.INSTAGRAM_KEY
+                      };
+                      (function(message, user, timestamp, published) {                        
+                        request.get(options, function(err, result, body) {
+                          body = JSON.parse(body);
+                          if ((body.data) && (body.data.images) &&    
+                              (body.data.images.standard_resolution ) &&
+                              (body.data.images.standard_resolution.url)) {
+                            results.push({
+                              mediaurl:
+                                  body.data.images.standard_resolution.url,
+                              storyurl: storyurl,
+                              message: message,
+                              user: user,
+                              type: 'photo',
+                              timestamp: timestamp,
+                              published: published
+                            });                                           
+                          }
+                          pendingUrls++;
+                          if (pendingUrls === numberOfUrls) {                                                
+                            collectResults(
+                                results, currentService, pendingRequests);
+                          }                              
+                        });
+                      })(message, user, timestamp, published);                                                
+                    // URL from unsupported media platform, don't consider it  
                     } else {
                       numberOfUrls--;
                     }
-                    locationIndex++;
-                  });
-                }                
-              }
-            );            
-          } else {
-            collectResults([], currentService, pendingRequests);
-          }          
-        });
-      }).on('error', function(e) {
-        collectResults([], currentService, pendingRequests);
+                  } else {
+                    numberOfUrls--;
+                  }
+                  locationIndex++;
+                });
+              }                
+            }
+          );            
+        } else {
+          collectResults([], currentService, pendingRequests);
+        }          
       });               
     },
     Instagram: function(pendingRequests) {
@@ -984,48 +959,38 @@ function search(req, res, next) {
       };
       params = querystring.stringify(params);
       var options = {
-        host: 'api.instagram.com',
-        port: 443,
-        path: '/v1/tags/' +
+        url: 'https://api.instagram.com/v1/tags/' +
             query.replace(/\s*/g, '').replace(/\W*/g, '').toLowerCase() +
             '/media/recent?' + params,
         headers: GLOBAL_config.HEADERS
       };
-      https.get(options, function(reply) { 
-        var response = '';
-        reply.on('data', function(chunk) {
-          response += chunk;
-        });
-        reply.on('end', function() {   
-          response = JSON.parse(response);
-          var results = [];
-          if ((response.data) && (response.data.length)) {
-            var items = response.data;
-            for (var i = 0, len = items.length; i < len; i++) {
-              var item = items[i];
-              var timestamp = parseInt(item.created_time + '000', 10);
-              var message = '';
-              message += (item.caption && item.caption.text ?
-                  item.caption.text : '');
-              message += (message.length ? '. ' : '') + 
-                  (item.tags && Array.isArray(item.tags) ?
-                      item.tags.join(', ') : '');
-              results.push({
-                mediaurl: item.images.standard_resolution.url, 
-                storyurl: item.link,
-                message: cleanMessage(message),
-                user: 'https://api.instagram.com/v1/users/' + item.user.id,
-                type: item.type === 'image'? 'photo' : '',
-                timestamp: timestamp,
-                published: getIsoDateString(timestamp)
-              });
-            }
+      request.get(options, function(err, reply, body) { 
+        body = JSON.parse(body);
+        var results = [];
+        if ((body.data) && (body.data.length)) {
+          var items = body.data;
+          for (var i = 0, len = items.length; i < len; i++) {
+            var item = items[i];
+            var timestamp = parseInt(item.created_time + '000', 10);
+            var message = '';
+            message += (item.caption && item.caption.text ?
+                item.caption.text : '');
+            message += (message.length ? '. ' : '') + 
+                (item.tags && Array.isArray(item.tags) ?
+                    item.tags.join(', ') : '');
+            results.push({
+              mediaurl: item.images.standard_resolution.url, 
+              storyurl: item.link,
+              message: cleanMessage(message),
+              user: 'https://api.instagram.com/v1/users/' + item.user.id,
+              type: item.type === 'image'? 'photo' : '',
+              timestamp: timestamp,
+              published: getIsoDateString(timestamp)
+            });
           }
-          collectResults(results, currentService, pendingRequests);
-        });
-      }).on('error', function(e) {
-        collectResults([], currentService, pendingRequests);
-      });                       
+        }
+        collectResults(results, currentService, pendingRequests);
+      });
     },    
     YouTube: function(pendingRequests) {
       var currentService = 'YouTube';   
@@ -1042,57 +1007,47 @@ function search(req, res, next) {
       };
       params = querystring.stringify(params);
       var options = {
-        host: 'gdata.youtube.com',
-        port: 80,
-        path: '/feeds/api/videos?' + params,
+        url: 'http://gdata.youtube.com/feeds/api/videos?' + params,
         headers: GLOBAL_config.HEADERS
       };
-      http.get(options, function(reply) {        
-        var response = '';
-        reply.on('data', function(chunk) {
-          response += chunk;
-        });
-        reply.on('end', function() {      
-          response = JSON.parse(response);          
-          var results = [];
-          if ((response.data) && (response.data.items)) {
-            var items = response.data.items;
-            Step(
-              function() {
-                var group = this.group();            
-                items.forEach(function(item) {
-                  if (item.accessControl.embed !== 'allowed') {
-                    return;
-                  }
-                  var cb = group();
-                  var timestamp = Date.parse(item.uploaded);
-                  var url = item.player.default;
-                  cleanVideoUrl(url, function(cleanedVideoUrl) {
-                    results.push({
-                      mediaurl: cleanedVideoUrl,
-                      storyurl: url,
-                      message: cleanMessage(
-                          item.title + '. ' + item.description),
-                      user: 'http://www.youtube.com/' + item.uploader,
-                      type: 'video',
-                      timestamp: timestamp,
-                      published: getIsoDateString(timestamp)
-                    });                    
-                    cb(null);
-                  });
+      request.get(options, function(err, reply, body) {        
+        body = JSON.parse(body);          
+        var results = [];
+        if ((body.data) && (body.data.items)) {
+          var items = body.data.items;
+          Step(
+            function() {
+              var group = this.group();            
+              items.forEach(function(item) {
+                if (item.accessControl.embed !== 'allowed') {
+                  return;
+                }
+                var cb = group();
+                var timestamp = Date.parse(item.uploaded);
+                var url = item.player.default;
+                cleanVideoUrl(url, function(cleanedVideoUrl) {
+                  results.push({
+                    mediaurl: cleanedVideoUrl,
+                    storyurl: url,
+                    message: cleanMessage(
+                        item.title + '. ' + item.description),
+                    user: 'http://www.youtube.com/' + item.uploader,
+                    type: 'video',
+                    timestamp: timestamp,
+                    published: getIsoDateString(timestamp)
+                  });                    
+                  cb(null);
                 });
-              },
-              function(err) {
-                collectResults(results, currentService, pendingRequests);                
-              }
-            );              
-          } else {
-            collectResults(results, currentService, pendingRequests);                            
-          }
-        });
-      }).on('error', function(e) {
-        collectResults([], currentService, pendingRequests);
-      });                       
+              });
+            },
+            function(err) {
+              collectResults(results, currentService, pendingRequests);                
+            }
+          );              
+        } else {
+          collectResults(results, currentService, pendingRequests);                            
+        }
+      });
     },
     FlickrVideos: function(pendingRequests) {
       services.Flickr(pendingRequests, true);
@@ -1114,115 +1069,111 @@ function search(req, res, next) {
       };
       params = querystring.stringify(params);
       var options = {
-        host: 'api.flickr.com',
-        port: 80,
-        path: '/services/rest/?' + params,
+        url: 'http://api.flickr.com/services/rest/?' + params,
         headers: GLOBAL_config.HEADERS
       };
-      http.get(options, function(reply) {        
-        var response = '';
-        reply.on('data', function(chunk) {
-          response += chunk;
-        });
-        reply.on('end', function() {      
-          response = JSON.parse(response);
-          var results = [];
-          if ((response.photos) && (response.photos.photo)) {
-            var photos = response.photos.photo;
-            Step(     
-              function() {              
-                var group = this.group();
-                for (var i = 0, len = photos.length; i < len; i++) {
-                  var photo = photos[i];
-                  if (photo.ispublic) {                
+      request.get(options, function(err, reply, body) {        
+          body = JSON.parse(body);
+        var results = [];
+        if ((body.photos) && (body.photos.photo)) {
+          var photos = body.photos.photo;
+          Step(     
+            function() {              
+              var group = this.group();
+              for (var i = 0, len = photos.length; i < len; i++) {
+                var photo = photos[i];
+                if (photo.ispublic) {                
+                  var params = {
+                    method: 'flickr.photos.getInfo',
+                    api_key: GLOBAL_config.FLICKR_KEY,
+                    format: 'json',
+                    nojsoncallback: 1,
+                    photo_id: photo.id
+                  };
+                  params = querystring.stringify(params);
+                  var options = {
+                    url: 'http://api.flickr.com/services/rest/?' + params,
+                    headers: GLOBAL_config.HEADERS
+                  };
+                  var cb = group();                
+                  request.get(options, function(err2, reply2, body2) {        
+                      body2 = JSON.parse(body2);                
+                    var tags = [];
+                    if ((body2.photo) &&
+                        (body2.photo.tags) && 
+                        (body2.photo.tags.tag) &&
+                        (Array.isArray(body2.photo.tags.tag))) {
+                      body2.photo.tags.tag.forEach(function(tag) {
+                        tags.push(tag._content);                          
+                      });
+                    }
+                    var photo2 = body2.photo;
+                    var timestamp = Date.parse(photo2.dates.taken);
                     var params = {
-                      method: 'flickr.photos.getInfo',
+                      method: 'flickr.photos.getSizes',
                       api_key: GLOBAL_config.FLICKR_KEY,
                       format: 'json',
                       nojsoncallback: 1,
-                      photo_id: photo.id
+                      photo_id: photo2.id
                     };
                     params = querystring.stringify(params);
                     var options = {
-                      host: 'api.flickr.com',
-                      port: 80,
-                      path: '/services/rest/?' + params,
+                      url: 'http://api.flickr.com/services/rest/?' + params,
                       headers: GLOBAL_config.HEADERS
                     };
-                    var cb = group();                
-                    http.get(options, function(reply2) {        
-                      var response2 = '';
-                      reply2.on('data', function(chunk) {
-                        response2 += chunk;
-                      });
-                      reply2.on('end', function() {      
-                        response2 = JSON.parse(response2);                
-                        var tags = [];
-                        if ((response2.photo) &&
-                            (response2.photo.tags) && 
-                            (response2.photo.tags.tag) &&
-                            (Array.isArray(response2.photo.tags.tag))) {
-                          response2.photo.tags.tag.forEach(function(tag) {
-                            tags.push(tag._content);                          
-                          });
-                        }
-                        var photo2 = response2.photo;
-                        var timestamp = Date.parse(photo2.dates.taken);
-                        var params = {
-                          method: 'flickr.photos.getSizes',
-                          api_key: GLOBAL_config.FLICKR_KEY,
-                          format: 'json',
-                          nojsoncallback: 1,
-                          photo_id: photo2.id
-                        };
-                        params = querystring.stringify(params);
-                        var options = {
-                          url: 'http://api.flickr.com/services/rest/?' + params,
-                          headers: GLOBAL_config.HEADERS
-                        };
-                        request.get(options, function(err, res2, body) {
-                          body = JSON.parse(body); 
-                          if ((body.sizes) && (body.sizes.size) &&
-                              (Array.isArray(body.sizes.size))) {
-                            var mediaurl = false;                                
-                            body.sizes.size.forEach(function(size) {                              
-                              if (size.label === 'Original') {
-                                mediaurl = size.source;
-                              }
-                            });
-                            results.push({
-                              mediaurl: mediaurl,
-                              storyurl: 'http://www.flickr.com/photos/' +
-                                  photo2.owner.nsid + '/' + photo2.id + '/',
-                              message: cleanMessage(photo2.title._content +
-                                  '. ' + photo2.description._content +
-                                  tags.join(', ')),
-                              user: 'http://www.flickr.com/photos/' +
-                                  photo2.owner.nsid + '/',
-                              type: (videoSearch ? 'video' : 'photo'),
-                              timestamp: timestamp,
-                              published: getIsoDateString(timestamp)
-                            });
+                    request.get(options, function(err, res2, body) {
+                      body = JSON.parse(body); 
+                      if ((body.sizes) && (body.sizes.size) &&
+                          (Array.isArray(body.sizes.size))) {
+                        var mediaurl = false;                                
+                        body.sizes.size.forEach(function(size) {                              
+                          // take the picture in the best-possible
+                          // resolution
+                          if ((!videoSearch) &&
+                              ((size.label === 'Original') ||
+                               (size.label === 'Large') ||
+                               (size.label === 'Medium 640') ||
+                               (size.label === 'Medium 640') ||
+                               (size.label === 'Medium') ||
+                               (size.label === 'Small') ||
+                               (size.label === 'Thumbnail') ||
+                               (size.label === 'Square'))) {
+                            mediaurl = size.source;
                           }
-                          cb();                                                    
+                          // take the video in the best-possible quality
+                          if ((videoSearch) &&
+                              ((size.label === 'Site MP4') ||
+                               (size.label === 'Mobile MP4'))) {
+                            mediaurl = size.source;
+                          }
                         });
-                      });
-                    }).on('error', function(e) {
-                      cb();
-                    });
-                  }
+                        results.push({
+                          mediaurl: mediaurl,
+                          storyurl: 'http://www.flickr.com/photos/' +
+                              photo2.owner.nsid + '/' + photo2.id + '/',
+                          message: cleanMessage(photo2.title._content +
+                              '. ' + photo2.description._content +
+                              tags.join(', ')),
+                          user: 'http://www.flickr.com/photos/' +
+                              photo2.owner.nsid + '/',
+                          type: (videoSearch ? 'video' : 'photo'),
+                          timestamp: timestamp,
+                          published: getIsoDateString(timestamp)
+                        });
+                      }
+                      cb();                                                    
+                    });                    
+                  })
                 }
-              },
-              function() {
-                collectResults(results, currentService, pendingRequests);
               }
-            );
-          } else {
-            collectResults([], currentService, pendingRequests);
-          }
-        });
-      }).on('error', function(e) {
-        collectResults([], currentService, pendingRequests);
+            },
+            function() {
+              collectResults(results, currentService, pendingRequests);
+            }
+          );
+        } else {
+          collectResults([], currentService, pendingRequests);
+        }
       });
     },
     MobyPicture: function(pendingRequests) {
@@ -1236,40 +1187,30 @@ function search(req, res, next) {
       };
       params = querystring.stringify(params);
       var options = {
-        host: 'api.mobypicture.com',
-        port: 80,
-        path: '/?' + params,
+        url: 'http://api.mobypicture.com/?' + params,
         headers: GLOBAL_config.HEADERS
       };
-      http.get(options, function(reply) {        
-        var response = '';
-        reply.on('data', function(chunk) {
-          response += chunk;
-        });
-        reply.on('end', function() {      
-          response = JSON.parse(response);
-          var results = [];
-          if ((response.results) && (response.results.length)) {
-            var items = response.results;            
-            for (var i = 0, len = items.length; i < len; i++) {
-              var item = items[i];
-              var timestamp = item.post.created_on_epoch;
-              results.push({
-                mediaurl: item.post.media.url_full,
-                storyurl: item.post.link,
-                message: cleanMessage(
-                    item.post.title + '. ' + item.post.description),
-                user: item.user.url,
-                type: item.post.media.type,
-                timestamp: timestamp,
-                published: getIsoDateString(timestamp)
-              });
-            }
+      request.get(options, function(err, reply, body) {        
+        body = JSON.parse(body);
+        var results = [];
+        if ((body.results) && (body.results.length)) {
+          var items = body.results;            
+          for (var i = 0, len = items.length; i < len; i++) {
+            var item = items[i];
+            var timestamp = item.post.created_on_epoch;
+            results.push({
+              mediaurl: item.post.media.url_full,
+              storyurl: item.post.link,
+              message: cleanMessage(
+                  item.post.title + '. ' + item.post.description),
+              user: item.user.url,
+              type: item.post.media.type,
+              timestamp: timestamp,
+              published: getIsoDateString(timestamp)
+            });
           }
-          collectResults(results, currentService, pendingRequests);
-        });
-      }).on('error', function(e) {
-        collectResults([], currentService, pendingRequests);
+        }
+        collectResults(results, currentService, pendingRequests);
       });
     },
     TwitPic: function(pendingRequests) {   
@@ -1282,91 +1223,72 @@ function search(req, res, next) {
       };
       params = querystring.stringify(params);
       var options = {
-        host: 'web1.twitpic.com',
-        port: 80,
-        path: '/search/show?' + params,
+        url: 'http://web1.twitpic.com/search/show?' + params,
         headers: GLOBAL_config.HEADERS
       };
-      http.get(options, function(reply) {        
-        var response = '';
-        reply.on('data', function(chunk) {
-          response += chunk;
-        });
-        reply.on('end', function() {      
-          response = JSON.parse(response);
-          var results = [];
-          if (response.length) {            
-            Step(
-              function() {
-                var group = this.group();
-                for (var i = 0, len = response.length; i < len; i++) {
-                  var item = response[i];
-                  var id = item.link.replace(/.*?\/(\w+)$/, '$1');
-                  var params = {
-                    id: id
-                  };
-                  params = querystring.stringify(params);
-                  var options = {
-                    host: 'api.twitpic.com',
-                    port: 80,
-                    path: '/2/media/show.json?' + params,
-                    headers: GLOBAL_config.HEADERS
-                  };
-                  var cb = group();                  
-                  http.get(options, function(reply2) {        
-                    var response2 = '';
-                    reply2.on('data', function(chunk) {
-                      response2 += chunk;
-                    });
-                    reply2.on('end', function() {                            
-                      if (response2) {
-                        response2 = JSON.parse(response2);                  
-                      } else {
-                        return cb();
-                      }
-                      if (!response2.errors) {                      
-                        var timestamp = Date.parse(response2.timestamp);
-                        var options = {
-                          url: 'http://twitpic.com/' +
-                              response2.short_id + '/full'
-                        };
-                        request.get(options, function(err, res, body) {
-                          scrapeTwitPic(body, function(mediaUrl) {
-                            if (mediaUrl) {
-                              results.push({
-                                mediaurl: mediaUrl,
-                                storyurl: 'http://twitpic.com/' +
-                                    response2.short_id,
-                                message: cleanMessage(response2.message), 
-                                user: 'http://twitter.com/' +
-                                    response2.user.username,
-                                type: 'photo',
-                                timestamp: timestamp,
-                                published: getIsoDateString(timestamp)
-                              });
-                            }
-                            cb();                            
+      request.get(options, function(err, reply, body) {        
+        body = JSON.parse(body);
+        var results = [];
+        if (body.length) {            
+          Step(
+            function() {
+              var group = this.group();
+              for (var i = 0, len = body.length; i < len; i++) {
+                var item = body[i];
+                var id = item.link.replace(/.*?\/(\w+)$/, '$1');
+                var params = {
+                  id: id
+                };
+                params = querystring.stringify(params);
+                var options = {
+                  url: 'http://api.twitpic.com/2/media/show.json?' + params,
+                  headers: GLOBAL_config.HEADERS
+                };
+                var cb = group();                  
+                request.get(options, function(err2, reply2, body2) {        
+                  if (body2) {
+                    body2 = JSON.parse(body2);                  
+                  } else {
+                    return cb();
+                  }
+                  if (!body2.errors) {                      
+                    var timestamp = Date.parse(body2.timestamp);
+                    var options = {
+                      url: 'http://twitpic.com/' +
+                          body2.short_id + '/full',
+                      headers: GLOBAL_config.HEADERS                          
+                    };
+                    request.get(options, function(err3, res3, body3) {          
+                      scrapeTwitPic(body3, function(mediaUrl) {
+                        if (mediaUrl) {
+                          results.push({
+                            mediaurl: mediaUrl,
+                            storyurl: 'http://twitpic.com/' +
+                                body2.short_id,
+                            message: cleanMessage(body2.message), 
+                            user: 'http://twitter.com/' +
+                                body2.user.username,
+                            type: 'photo',
+                            timestamp: timestamp,
+                            published: getIsoDateString(timestamp)
                           });
-                        });
-                      } else {
-                        cb();
-                      }
+                        }
+                        cb();                            
+                      });
                     });
-                  }).on('error', function(e) {
+                  } else {
                     cb();
-                  });
-                }
-              },
-              function() {
-                collectResults(results, currentService, pendingRequests);
+                  }
+                });
               }
-            );
-          } else {
-            collectResults(results, currentService, pendingRequests);
-          }
-        });
-      }).on('error', function(e) {
-        collectResults([], currentService, pendingRequests);
+            },
+            function() {
+              collectResults(results, currentService, pendingRequests);
+            }
+          );
+        } else {
+          collectResults(results, currentService, pendingRequests);
+        }
       });
     }
   };
