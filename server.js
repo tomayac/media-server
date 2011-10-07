@@ -210,10 +210,11 @@ function search(req, res, next) {
    */
   function scrapeYfrog(body) {
     try {
-      var scraperTag = '<image_link>';
-      var scraperTagLength = scraperTag.length;
-      var start = body.indexOf(scraperTag) + scraperTagLength;
-      var end = body.indexOf(scraperTag);                          
+      var scraperTag1 = '<image_link>';
+      var scraperTag2 = '</image_link>';
+      var scraperTagLength = scraperTag1.length;
+      var start = body.indexOf(scraperTag1) + scraperTagLength;
+      var end = body.indexOf(scraperTag2);                          
       return body.substring(start, end);
     } catch(e) {
       throw('ERROR: Yfrog screen scraper broken');      
@@ -580,7 +581,6 @@ function search(req, res, next) {
                     (attachment.displayName ?
                         ' ' + attachment.displayName : ''));
                 if (message) {        
-console.log(JSON.stringify(attachment));
                   results.push({
                     mediaurl: (attachment.fullImage ?
                         attachment.fullImage.url :
@@ -859,6 +859,7 @@ console.log(JSON.stringify(attachment));
                       };
                       (function(message, user, timestamp, published) {
                         request.get(options, function(err, result, body) {                          
+console.log(body)                          
                           mediaurl = scrapeYfrog(body);
                           if (mediaurl) {
                             results.push({
