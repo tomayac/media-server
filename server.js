@@ -580,9 +580,12 @@ function search(req, res, next) {
                     (attachment.displayName ?
                         ' ' + attachment.displayName : ''));
                 if (message) {        
+console.log(JSON.stringify(attachment));
                   results.push({
                     mediaurl: (attachment.fullImage ?
-                        attachment.fullImage.url : attachment.embed),
+                        attachment.fullImage.url :
+                        (attachment.embed ? 
+                            attachment.embed : attachment.url)),
                     storyurl: item.url,                      
                     message: message,
                     user: item.actor.url,
