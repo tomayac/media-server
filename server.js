@@ -858,8 +858,7 @@ function search(req, res, next) {
                         url: 'http://yfrog.com/api/xmlInfo?path=' + id
                       };
                       (function(message, user, timestamp, published) {
-                        request.get(options, function(err, result, body) {                          
-console.log(body)                          
+                        request.get(options, function(err, result, body) {
                           mediaurl = scrapeYfrog(body);
                           if (mediaurl) {
                             results.push({
