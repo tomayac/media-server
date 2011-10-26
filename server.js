@@ -138,22 +138,26 @@ function search(req, res, next) {
               that(null, body);
             });
           },
-          function(err, body) {
-            var response = JSON.parse(body);
+          function(err, body) {            
             var html5Url = false;
-            for (var i = 0, len = response.length; i < len; i++) {
-              var data = response[i];
-              if (data.type.indexOf('video/webm') === 0) {
-                html5Url = data.url;
-                break;
+            try {
+              var response = JSON.parse(body);              
+              for (var i = 0, len = response.length; i < len; i++) {
+                var data = response[i];
+                if (data.type.indexOf('video/webm') === 0) {
+                  html5Url = data.url;
+                  break;
+                }
               }
+              // if either embedding forbidden or no HTML5 version available,
+              // use the normalized YouTube URL
+              if (!html5Url) {
+                html5Url = 'http://www.youtube.com/watch?v=' + videoId;
+              }
+              callback(html5Url);
+            } catch(e) {
+              callback(html5Url);
             }
-            // if either embedding forbidden or no HTML5 version available,
-            // use the normalized YouTube URL
-            if (!html5Url) {
-              html5Url = 'http://www.youtube.com/watch?v=' + videoId;
-            }
-            callback(html5Url);
           }
         );        
       } catch(e) {
