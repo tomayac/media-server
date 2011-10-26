@@ -34,6 +34,7 @@ var GLOBAL_config = {
   TRANSLATE: false,
   PART_OF_SPEECH: false,
   NAMED_ENTITY_EXTRACTION: false,
+  USE_GOOGLE_RESEARCH_API: false,
   MOBYPICTURE_KEY: 'TGoRMvQMAzWL2e9t',
   FLICKR_SECRET: 'a4a150addb7d59f1',
   FLICKR_KEY: 'b0f2a04baa5dd667fb181701408db162',
@@ -41,6 +42,7 @@ var GLOBAL_config = {
   INSTAGRAM_KEY: '82fe3d0649e04c2da8e38736547f9170',
   INSTAGRAM_SECRET: 'b0b5316d40a74dffab16bfe3b0dfd5b6',
   GOOGLE_KEY: 'AIzaSyC5GxhDFxBHTKCLNMYtYm6o1tiagi65Ufc',
+  GOOGLE_RESEARCH_API_KEY: 'DQAAAMcAAAAcGiug619uBnQa2Joxo2vPo2Bup-s062p1fLvLpRM9Mc7IdRUeJ-YZUv9BcuXgAdWcg1uu5YrIRLvzA_eojgOmpGF6wF3Bsd5pYAczmtTeNcpgzdWI5otAToWwPkSuRRulDUqAUZdnCXwjuR8XTobYVLNNmO-sqVeXIwaT593vH2eDGycOoYyeDEji0jmPTXkvqV9_T20u7Zb5jWcl2b-Kz5B6n2OuKSIZjRU_8bqKzasAQD5r9ycFY5uWTQPyUA3lFRqdgS0tTDPpFL9-bXFP',
   IMGUR_KEY: '9b7d0e62bfaacc04db0b719c998d225e',
   HEADERS: {
     "Accept": "application/json, text/javascript, */*",
@@ -68,7 +70,8 @@ var GLOBAL_config = {
     'i.imgur.com',
     'picasaweb.google.com',
     'twitgoo.com',
-    'vimeo.com'],
+    'vimeo.com',
+    'img.ly'],
   URL_REGEX: /\b((?:[a-z][\w-]+:(?:\/{1,3}|[a-z0-9%])|www\d{0,3}[.]|[a-z0-9.\-]+[.][a-z]{2,4}\/)(?:[^\s()<>]+|\(([^\s()<>]+|(\([^\s()<>]+\)))*\))+(?:\(([^\s()<>]+|(\([^\s()<>]+\)))*\)|[^\s`!()\[\]{};:'".,<>?«»“”‘’]))/ig,
   HASHTAG_REGEX: /(^|\s)\#(\S+)/g,
   USER_REGEX: /(^|\W)\@([a-zA-Z0-9_]+)/g,
@@ -236,6 +239,24 @@ function search(req, res, next) {
         if (body.indexOf('error') === -1) {        
           throw('ERROR: TwitPic screen scraper broken');          
         }
+        callback(false);          
+      }  
+    });    
+  } 
+
+  /**
+   * Scrapes img.ly
+   */
+  function scrapeImgLy(body, callback) {
+    var mediaurl = false;
+    jsdom.env(body, function(errors, window) {
+      var $ = window.document; 
+      var match = 'image-full';
+      try {
+        mediaurl = $.getElementById(match).getElementsByTagName('img')[0].src;
+        callback(mediaurl);
+      } catch(e) { 
+        throw('ERROR: img.ly screen scraper broken');          
         callback(false);          
       }  
     });    
@@ -428,15 +449,44 @@ function search(req, res, next) {
    */
   function translate(json) {
     if (GLOBAL_config.DEBUG) console.log('translate');    
-    var options = {
-      headers: {
-        "X-HTTP-Method-Override": 'GET',
-        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"
-      },
-      method: 'POST',
-      url: 'https://www.googleapis.com/language/translate/v2',
-      body: 'key=' + GLOBAL_config.GOOGLE_KEY + '&target=en'
-    };  
+    var options;
+    if (GLOBAL_config.USE_GOOGLE_RESEARCH_API) {
+      /*
+      options = {
+        headers: {
+          "X-HTTP-Method-Override": 'GET',
+          "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+          "Authorization": "GoogleLogin auth=" +
+              GLOBAL_config.GOOGLE_RESEARCH_API_KEY 
+        },
+        method: 'POST',
+        url: 'http://translate.google.com/researchapi/translate',
+        body: 'tl=en'
+      };
+      */  
+      options = {
+        headers: {
+          "X-HTTP-Method-Override": 'GET',
+          "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+          "Authorization": "GoogleLogin auth=" +
+              GLOBAL_config.GOOGLE_RESEARCH_API_KEY 
+        },
+        method: 'POST',
+        url: 'https://www.googleapis.com/language/translate/v2',
+        body: 'key=' + GLOBAL_config.GOOGLE_RESEARCH_API_KEY + '&target=en'
+      };
+      
+    } else {
+      options = {
+        headers: {
+          "X-HTTP-Method-Override": 'GET',
+          "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"
+        },
+        method: 'POST',
+        url: 'https://www.googleapis.com/language/translate/v2',
+        body: 'key=' + GLOBAL_config.GOOGLE_KEY + '&target=en'
+      };        
+    }
     var collector = {};
     Step(
       function() {
@@ -448,36 +498,47 @@ function search(req, res, next) {
           collector[serviceName] = [];
           service.forEach(function(item, i) {  
             var text = item.message.clean;        
-            options.body += '&q=' + encodeURIComponent(text);
+            if (GLOBAL_config.USE_GOOGLE_RESEARCH_API) {
+              //options.body = 'tl=en&q=' + encodeURIComponent(text);
+              options.body += '&q=' + encodeURIComponent(text);
+            } else {
+              options.body += '&q=' + encodeURIComponent(text);
+            }
             collector[serviceName][i] = {
               text: '',
               language: ''
             };               
           });
-          request(options, function(err, res, body) {    
-            if (!err && res.statusCode === 200) {
+          request(options, function(err1, res1, body) {    
+//  FixMe console.log(JSON.stringify(options))
               var response;
-              try {
-                response = JSON.parse(body);
-              } catch(e) {
-                // error
-                return cb(null);                
-              }                    
-              if ((response.data) &&
-                  (response.data.translations) &&
-                  (Array.isArray(response.data.translations))) {                
-                response.data.translations.forEach(function(translation, j) {                    
-                  collector[serviceName][j] = {
-                    text: replaceHtmlEntities(translation.translatedText),
-                    language: translation.detectedSourceLanguage
-                  };
-                });
+              if (GLOBAL_config.USE_GOOGLE_RESEARCH_API) {
+// FixMe console.log('hello')
+// FixMe res.send(body);
+              } else {
+                if (!err1 && res1.statusCode === 200) {                
+                  try {
+                    response = JSON.parse(body);
+                  } catch(e) {
+                    // error
+                    return cb(null);                
+                  }                    
+                  if ((response.data) &&
+                      (response.data.translations) &&
+                      (Array.isArray(response.data.translations))) {                
+                    response.data.translations.forEach(function(translation, j) {                    
+                      collector[serviceName][j] = {
+                        text: replaceHtmlEntities(translation.translatedText),
+                        language: translation.detectedSourceLanguage
+                      };
+                    });
+                  }                
+                } else {
+                  // error
+                  return cb(null);              
+                }                  
               }
               cb(null);            
-            } else {
-              // error
-              return cb(null);              
-            }
           });                              
         });         
       },
@@ -795,14 +856,24 @@ function search(req, res, next) {
                 obj.options.forEach(function(options) {
                   var cb = group();
                   request.get(options, function(err, reply2) {                                    
-                    cb(null, {
-                      req: {
-                        statusCode: reply2.statusCode,
-                        location: (reply2.headers.location ?
-                            reply2.headers.location : '')
-                      },
-                      url: options.url
-                    });
+                    if (reply2 && reply2.statusCode) {
+                      cb(null, {
+                        req: {
+                          statusCode: reply2.statusCode,
+                          location: (reply2.headers.location ?
+                              reply2.headers.location : '')
+                        },
+                        url: options.url
+                      });
+                    } else {
+                      cb(null, {
+                        req: {
+                          statusCode: 404,
+                          location: ''
+                        },
+                        url: options.url
+                      });                      
+                    }
                   })
                 });
               });       
@@ -905,7 +976,35 @@ function search(req, res, next) {
                             }                              
                           });                            
                         });
-                      })(message, user, timestamp, published);                        
+                      })(message, user, timestamp, published);    
+                    // img.ly                      
+                    } else if (mediaurl.indexOf('http://img.ly') === 0) {                        
+                      var id = mediaurl.replace('http://img.ly/', '');
+                      var options = {
+                        url: 'http://img.ly/' + id + '/full'
+                      };
+                      (function(message, user, timestamp, published) {                        
+                        request.get(options, function(err, res, body) {
+                          scrapeImgLy(body, function(mediaurl) {
+                            if (mediaurl) {
+                              results.push({
+                                mediaurl: mediaurl,
+                                storyurl: storyurl,
+                                message: message,
+                                user: user,
+                                type: 'photo',
+                                timestamp: timestamp,
+                                published: published
+                              });  
+                            }
+                            pendingUrls++;           
+                            if (pendingUrls === numberOfUrls) {                                                
+                              collectResults(
+                                  results, currentService, pendingRequests);
+                            }                              
+                          });                            
+                        });
+                      })(message, user, timestamp, published);                                              
                     // Instagram  
                     } else if (mediaurl.indexOf('http://instagr.am') === 0) {                        
                       var id = mediaurl.replace('http://instagr.am/p/', '');
