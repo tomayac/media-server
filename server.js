@@ -785,19 +785,21 @@ function search(req, res, next) {
                 var mediaUrl = item.type === 'video' ?
                     item.source : item.picture;
                 cleanVideoUrl(mediaUrl, function(cleanedMediaUrl) {
-                  results.push({
-                    mediaurl: cleanedMediaUrl.replace(/s\.jpg$/gi, 'n.jpg'),
-                    storyurl:
-                        'https://www.facebook.com/permalink.php?story_fbid=' + 
-                        item.id.split(/_/)[1] + '&id=' + item.from.id,                      
-                    message: cleanMessage(message),
-                    user:
-                        'https://www.facebook.com/profile.php?id=' +
-                        item.from.id,
-                    type: item.type,
-                    timestamp: timestamp,
-                    published: getIsoDateString(timestamp)
-                  });
+                  if (cleanedMediaUrl) {
+                    results.push({
+                      mediaurl: cleanedMediaUrl.replace(/s\.jpg$/gi, 'n.jpg'),
+                      storyurl:
+                          'https://www.facebook.com/permalink.php?story_fbid=' + 
+                          item.id.split(/_/)[1] + '&id=' + item.from.id,                      
+                      message: cleanMessage(message),
+                      user:
+                          'https://www.facebook.com/profile.php?id=' +
+                          item.from.id,
+                      type: item.type,
+                      timestamp: timestamp,
+                      published: getIsoDateString(timestamp)
+                    });
+                  }
                   cb(null);
                 });
               });
