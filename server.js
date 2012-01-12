@@ -71,7 +71,8 @@ var GLOBAL_config = {
     'picasaweb.google.com',
     'twitgoo.com',
     'vimeo.com',
-    'img.ly'],
+    'img.ly',
+    'mypict.me'],
   URL_REGEX: /\b((?:[a-z][\w-]+:(?:\/{1,3}|[a-z0-9%])|www\d{0,3}[.]|[a-z0-9.\-]+[.][a-z]{2,4}\/)(?:[^\s()<>]+|\(([^\s()<>]+|(\([^\s()<>]+\)))*\))+(?:\(([^\s()<>]+|(\([^\s()<>]+\)))*\)|[^\s`!()\[\]{};:'".,<>?«»“”‘’]))/ig,
   HASHTAG_REGEX: /(^|\s)\#(\S+)/g,
   USER_REGEX: /(^|\W)\@([a-zA-Z0-9_]+)/g,
@@ -255,9 +256,9 @@ function search(req, res, next) {
     var mediaurl = false;
     jsdom.env(body, function(errors, window) {
       var $ = window.document; 
-      var match = 'image-full';
+      var match = 'the-image';
       try {
-        mediaurl = $.getElementById(match).getElementsByTagName('img')[0].src;
+        mediaurl = $.getElementById(match).src;
         callback(mediaurl);
       } catch(e) { 
         throw('ERROR: img.ly screen scraper broken');          
@@ -620,51 +621,55 @@ function search(req, res, next) {
         headers: GLOBAL_config.HEADERS
       };
       request.get(options, function(err, reply, body) {
-        body = JSON.parse(body);
         var results = [];
-        if (body.items && Array.isArray(body.items)) {
-          body.items.forEach(function(item) {
-            // only treat posts and shares, no check-ins
-            if (((item.verb === 'share') || (item.verb === 'post')) &&
-                (item.object.attachments) &&
-                (Array.isArray(item.object.attachments))) {
-              item.object.attachments.forEach(function(attachment) {    
-                // only treat photos and videos, skip articles
-                if ((attachment.objectType !== 'photo') &&
-                    (attachment.objectType !== 'video')) {
-                  return;
-                }
-                // the message can consist of different parts, dependent on the
-                // item type
-                var message = cleanMessage(
-                    (item.object.content ?
-                        item.object.content : '') +
-                    (item.title ?
-                        ' ' + item.title : '') +    
-                    (item.annotation ?
-                        ' ' + item.annotation : '') +
-                    (attachment.displayName ?
-                        ' ' + attachment.displayName : ''));
-                if (message) {        
-                  results.push({
-                    mediaurl: (attachment.fullImage ?
-                        attachment.fullImage.url :
-                        (attachment.embed ? 
-                            attachment.embed : attachment.url)),
-                    storyurl: item.url,                      
-                    message: message,
-                    user: item.actor.url,
-                    type: attachment.objectType,
-                    timestamp: (new Date(item.published)).getTime(),
-                    published: item.published
-                  });                    
-                }
-              });
-            }
-          });
+        try {
+          body = JSON.parse(body);          
+          if (body.items && Array.isArray(body.items)) {
+            body.items.forEach(function(item) {
+              // only treat posts and shares, no check-ins
+              if (((item.verb === 'share') || (item.verb === 'post')) &&
+                  (item.object.attachments) &&
+                  (Array.isArray(item.object.attachments))) {
+                item.object.attachments.forEach(function(attachment) {    
+                  // only treat photos and videos, skip articles
+                  if ((attachment.objectType !== 'photo') &&
+                      (attachment.objectType !== 'video')) {
+                    return;
+                  }
+                  // the message can consist of different parts, dependent on the
+                  // item type
+                  var message = cleanMessage(
+                      (item.object.content ?
+                          item.object.content : '') +
+                      (item.title ?
+                          ' ' + item.title : '') +    
+                      (item.annotation ?
+                          ' ' + item.annotation : '') +
+                      (attachment.displayName ?
+                          ' ' + attachment.displayName : ''));
+                  if (message) {        
+                    results.push({
+                      mediaurl: (attachment.fullImage ?
+                          attachment.fullImage.url :
+                          (attachment.embed ? 
+                              attachment.embed : attachment.url)),
+                      storyurl: item.url,                      
+                      message: message,
+                      user: item.actor.url,
+                      type: attachment.objectType,
+                      timestamp: (new Date(item.published)).getTime(),
+                      published: item.published
+                    });                    
+                  }
+                });
+              }
+            });
+            collectResults(results, currentService, pendingRequests);                                    
+          } else {
+            collectResults(results, currentService, pendingRequests);                          
+          }
+        } catch(e) {
           collectResults(results, currentService, pendingRequests);                                    
-        } else {
-          collectResults(results, currentService, pendingRequests);                          
         }
       });       
     },
@@ -688,46 +693,50 @@ function search(req, res, next) {
           collectResults(results, currentService, pendingRequests);
           return;
         }
-        body = JSON.parse(body);
-        if (body.entry && Array.isArray(body.entry)) {
-          var items = body.entry;
-          Step(
-            function() {
-              var group = this.group();                          
-              items.forEach(function(item) {
-                var cb = group();
-                var user = item.profileUrl;
-                var storyurl = user + '/photos/' + item.imageId;
-                var mediaurl = item.thumbnailUrl.replace(/m\.jpg$/, 'l.jpg');
-                var options = {
-                  url: storyurl,
-                  headers: GLOBAL_config.HEADERS
-                };
-                request.get(options, function(err, reply, body) {
-                  scrapeMySpace(body, function(scrapeResult) {                  
-                    if (scrapeResult.timestamp && scrapeResult.caption) {
-                      results.push({
-                        mediaurl: mediaurl,
-                        storyurl: storyurl,                      
-                        message: cleanMessage(scrapeResult.caption),
-                        user: user,
-                        type: 'photo',
-                        timestamp: scrapeResult.timestamp,
-                        published: getIsoDateString(scrapeResult.timestamp)
-                      });                    
-                    }
-                    cb(null);
+        try {
+          body = JSON.parse(body);
+          if (body.entry && Array.isArray(body.entry)) {
+            var items = body.entry;
+            Step(
+              function() {
+                var group = this.group();                          
+                items.forEach(function(item) {
+                  var cb = group();
+                  var user = item.profileUrl;
+                  var storyurl = user + '/photos/' + item.imageId;
+                  var mediaurl = item.thumbnailUrl.replace(/m\.jpg$/, 'l.jpg');
+                  var options = {
+                    url: storyurl,
+                    headers: GLOBAL_config.HEADERS
+                  };
+                  request.get(options, function(err, reply, body) {
+                    scrapeMySpace(body, function(scrapeResult) {                  
+                      if (scrapeResult.timestamp && scrapeResult.caption) {
+                        results.push({
+                          mediaurl: mediaurl,
+                          storyurl: storyurl,                      
+                          message: cleanMessage(scrapeResult.caption),
+                          user: user,
+                          type: 'photo',
+                          timestamp: scrapeResult.timestamp,
+                          published: getIsoDateString(scrapeResult.timestamp)
+                        });                    
+                      }
+                      cb(null);
+                    });
                   });
                 });
-              });
-            },
-            function(err) {
-              collectResults(results, currentService, pendingRequests);                
-            }
-          );            
-        } else {
-          collectResults(results, currentService, pendingRequests);                          
-        }        
+              },
+              function(err) {
+                collectResults(results, currentService, pendingRequests);                
+              }
+            );            
+          } else {
+            collectResults(results, currentService, pendingRequests);                          
+          }        
+        } catch(e) {
+          collectResults(results, currentService, pendingRequests);                                    
+        }
       });       
     },
     /*
@@ -761,55 +770,59 @@ function search(req, res, next) {
         headers: GLOBAL_config.HEADERS
       };
       request.get(options, function(err, reply, body) { 
-        body = JSON.parse(body);
-        var results = [];
-        if ((body.data) && (body.data.length)) {
-          var items = body.data;
-          Step(
-            function() {
-              var group = this.group();            
-              items.forEach(function(item) {
-                if (item.type !== 'photo' && item.type !== 'video') {
-                  return;
-                }
-                var cb = group();
-                var timestamp = Date.parse(item.created_time);
-                var message = '';
-                message += (item.name ? item.name : '');
-                message += (item.caption ?
-                    (message.length ? '. ' : '') + item.caption : '');
-                message += (item.description ?
-                    (message.length ? '. ' : '') + item.description : '');
-                message += (item.message ?
-                    (message.length ? '. ' : '') + item.message : '');                            
-                var mediaUrl = item.type === 'video' ?
-                    item.source : item.picture;
-                cleanVideoUrl(mediaUrl, function(cleanedMediaUrl) {
-                  if (cleanedMediaUrl) {
-                    results.push({
-                      mediaurl: cleanedMediaUrl.replace(/s\.jpg$/gi, 'n.jpg'),
-                      storyurl:
-                          'https://www.facebook.com/permalink.php?story_fbid=' + 
-                          item.id.split(/_/)[1] + '&id=' + item.from.id,                      
-                      message: cleanMessage(message),
-                      user:
-                          'https://www.facebook.com/profile.php?id=' +
-                          item.from.id,
-                      type: item.type,
-                      timestamp: timestamp,
-                      published: getIsoDateString(timestamp)
-                    });
+        try {
+          body = JSON.parse(body);
+          var results = [];
+          if ((body.data) && (body.data.length)) {
+            var items = body.data;
+            Step(
+              function() {
+                var group = this.group();            
+                items.forEach(function(item) {
+                  if (item.type !== 'photo' && item.type !== 'video') {
+                    return;
                   }
-                  cb(null);
+                  var cb = group();
+                  var timestamp = Date.parse(item.created_time);
+                  var message = '';
+                  message += (item.name ? item.name : '');
+                  message += (item.caption ?
+                      (message.length ? '. ' : '') + item.caption : '');
+                  message += (item.description ?
+                      (message.length ? '. ' : '') + item.description : '');
+                  message += (item.message ?
+                      (message.length ? '. ' : '') + item.message : '');                            
+                  var mediaUrl = item.type === 'video' ?
+                      item.source : item.picture;
+                  cleanVideoUrl(mediaUrl, function(cleanedMediaUrl) {
+                    if (cleanedMediaUrl) {
+                      results.push({
+                        mediaurl: cleanedMediaUrl.replace(/s\.jpg$/gi, 'n.jpg'),
+                        storyurl:
+                            'https://www.facebook.com/permalink.php?story_fbid=' + 
+                            item.id.split(/_/)[1] + '&id=' + item.from.id,                      
+                        message: cleanMessage(message),
+                        user:
+                            'https://www.facebook.com/profile.php?id=' +
+                            item.from.id,
+                        type: item.type,
+                        timestamp: timestamp,
+                        published: getIsoDateString(timestamp)
+                      });
+                    }
+                    cb(null);
+                  });
                 });
-              });
-            },
-            function(err) {
-              collectResults(results, currentService, pendingRequests);                
-            }
-          );              
-        } else {
-          collectResults(results, currentService, pendingRequests);                            
+              },
+              function(err) {
+                collectResults(results, currentService, pendingRequests);                
+              }
+            );              
+          } else {
+            collectResults(results, currentService, pendingRequests);                            
+          }
+        } catch(e) {
+          collectResults(results, currentService, pendingRequests);                                      
         }          
       });
     },
@@ -825,145 +838,119 @@ function search(req, res, next) {
         headers: GLOBAL_config.HEADERS
       };
       request.get(options, function(err, reply, body) { 
-        body = JSON.parse(body);
-        var results = [];
-        if ((body.results) && (body.results.length)) {
-          var items = body.results;
-          var itemStack = [];            
-          for (var i = 0, len = items.length; i < len; i++) {
-            var item = items[i];
-            // extract all URLs form a tweet
-            var urls = [];
-            text = item.text.replace(GLOBAL_config.URL_REGEX, function(url) {
-              var targetURL = (/^\w+\:\//.test(url) ? '' : 'http://') + url;
-              urls.push(targetURL);
-            });              
-            // for each URL prepare the options object
-            var optionsStack = [];                    
-            for (var j = 0, len2 = urls.length; j < len2; j++) {
-              var options = {
-                url: urls[j],
-                followRedirect: false,
-                headers: GLOBAL_config.HEADERS
+        try {
+          body = JSON.parse(body);
+          var results = [];
+          if ((body.results) && (body.results.length)) {
+            var items = body.results;
+            var itemStack = [];            
+            for (var i = 0, len = items.length; i < len; i++) {
+              var item = items[i];
+              // extract all URLs form a tweet
+              var urls = [];
+              text = item.text.replace(GLOBAL_config.URL_REGEX, function(url) {
+                var targetURL = (/^\w+\:\//.test(url) ? '' : 'http://') + url;
+                urls.push(targetURL);
+              });              
+              // for each URL prepare the options object
+              var optionsStack = [];                    
+              for (var j = 0, len2 = urls.length; j < len2; j++) {
+                var options = {
+                  url: urls[j],
+                  followRedirect: false,
+                  headers: GLOBAL_config.HEADERS
+                };
+                optionsStack[j] = options;
+              }              
+              itemStack[i] = {
+                urls: urls,
+                options: optionsStack,
+                item: item                
               };
-              optionsStack[j] = options;
-            }              
-            itemStack[i] = {
-              urls: urls,
-              options: optionsStack,
-              item: item                
-            };
-          }
-          // for each tweet retrieve all URLs and try to expand shortend URLs
-          Step(                     
-            function() {                            
-              var group = this.group();
-              itemStack.forEach(function (obj) {
-                obj.options.forEach(function(options) {
-                  var cb = group();
-                  request.get(options, function(err, reply2) {                                    
-                    if (reply2 && reply2.statusCode) {
-                      cb(null, {
-                        req: {
-                          statusCode: reply2.statusCode,
-                          location: (reply2.headers.location ?
-                              reply2.headers.location : '')
-                        },
-                        url: options.url
-                      });
-                    } else {
-                      cb(null, {
-                        req: {
-                          statusCode: 404,
-                          location: ''
-                        },
-                        url: options.url
-                      });                      
-                    }
-                  })
-                });
-              });       
-            },     
-            function(err, replies) { 
-              /**
-               * Checks if a URL is one of the media platform URLs
-               */
-              function checkForValidUrl(url) {
-                var host = new Uri(url).heirpart().authority().host();
-                return GLOBAL_config.MEDIA_PLATFORMS.indexOf(host) !== -1;
-              }
-              var locations = [];
-              replies.forEach(function(thing, i) {
-                if ((thing.req.statusCode === 301) ||
-                    (thing.req.statusCode === 302)) {    
-                  if (checkForValidUrl(thing.req.location)) {    
-                    locations.push(thing.req.location);
-                  } else {
-                    locations.push(false);
-                  }
-                } else {
-                  if (checkForValidUrl(thing.url)) {    
-                    locations.push(thing.url);
-                  } else {
-                    locations.push(false);
-                  }
+            }
+            // for each tweet retrieve all URLs and try to expand shortend URLs
+            Step(                     
+              function() {                            
+                var group = this.group();
+                itemStack.forEach(function (obj) {
+                  obj.options.forEach(function(options) {
+                    var cb = group();
+                    request.get(options, function(err, reply2) {                                    
+                      if (reply2 && reply2.statusCode) {
+                        cb(null, {
+                          req: {
+                            statusCode: reply2.statusCode,
+                            location: (reply2.headers.location ?
+                                reply2.headers.location : '')
+                          },
+                          url: options.url
+                        });
+                      } else {
+                        cb(null, {
+                          req: {
+                            statusCode: 404,
+                            location: ''
+                          },
+                          url: options.url
+                        });                      
+                      }
+                    })
+                  });
+                });       
+              },     
+              function(err, replies) { 
+                /**
+                 * Checks if a URL is one of the media platform URLs
+                 */
+                function checkForValidUrl(url) {
+                  var host = new Uri(url).heirpart().authority().host();
+                  return GLOBAL_config.MEDIA_PLATFORMS.indexOf(host) !== -1;
                 }
-              });        
-              var locationIndex = 0;
-              var numberOfUrls = 0;
-              var pendingUrls = 0;
-              for (var i = 0, len = itemStack.length; i < len; i++) {
-                itemStack[i].urls.forEach(function() {                  
-                  numberOfUrls++;
-                });
-              }
-              for (var i = 0, len = itemStack.length; i < len; i++) {
-                var item = itemStack[i].item;
-                var timestamp = Date.parse(item.created_at);                  
-                var published = getIsoDateString(timestamp)
-                var message = cleanMessage(item.text);
-                var user = 'http://twitter.com/' + item.from_user;
-                itemStack[i].urls.forEach(function() {
-                  if (locations[locationIndex]) {
-                    var mediaurl = locations[locationIndex];
-                    var storyurl = 'http://twitter.com/' +
-                        item.from_user + '/status/' + item.id_str;                  
-                    // yfrog                                                    
-                    if (mediaurl.indexOf('http://yfrog.com') === 0) {
-                      var id = mediaurl.replace('http://yfrog.com/', '');
-                      var options = {
-                        url: 'http://yfrog.com/api/xmlInfo?path=' + id
-                      };
-                      (function(message, user, timestamp, published) {
-                        request.get(options, function(err, result, body) {
-                          mediaurl = scrapeYfrog(body);
-                          if (mediaurl) {
-                            results.push({
-                              mediaurl: mediaurl,
-                              storyurl: storyurl,
-                              message: message,
-                              user: user,
-                              type: 'photo',
-                              timestamp: timestamp,
-                              published: published
-                            });  
-                          }
-                          pendingUrls++;           
-                          if (pendingUrls === numberOfUrls) {                                                
-                            collectResults(
-                                results, currentService, pendingRequests);
-                          }
-                        });
-                      })(message, user, timestamp, published);
-                    // TwitPic  
-                    } else if (mediaurl.indexOf('http://twitpic.com') === 0) {                        
-                      var id = mediaurl.replace('http://twitpic.com/', '');
-                      var options = {
-                        url: 'http://twitpic.com/' + id + '/full'
-                      };
-                      (function(message, user, timestamp, published) {                        
-                        request.get(options, function(err, res, body) {
-                          scrapeTwitPic(body, function(mediaurl) {
+                var locations = [];
+                replies.forEach(function(thing, i) {
+                  if ((thing.req.statusCode === 301) ||
+                      (thing.req.statusCode === 302)) {    
+                    if (checkForValidUrl(thing.req.location)) {    
+                      locations.push(thing.req.location);
+                    } else {
+                      locations.push(false);
+                    }
+                  } else {
+                    if (checkForValidUrl(thing.url)) {    
+                      locations.push(thing.url);
+                    } else {
+                      locations.push(false);
+                    }
+                  }
+                });        
+                var locationIndex = 0;
+                var numberOfUrls = 0;
+                var pendingUrls = 0;
+                for (var i = 0, len = itemStack.length; i < len; i++) {
+                  itemStack[i].urls.forEach(function() {                  
+                    numberOfUrls++;
+                  });
+                }
+                for (var i = 0, len = itemStack.length; i < len; i++) {
+                  var item = itemStack[i].item;
+                  var timestamp = Date.parse(item.created_at);                  
+                  var published = getIsoDateString(timestamp)
+                  var message = cleanMessage(item.text);
+                  var user = 'http://twitter.com/' + item.from_user;
+                  itemStack[i].urls.forEach(function() {
+                    if (locations[locationIndex]) {
+                      var mediaurl = locations[locationIndex];
+                      var storyurl = 'http://twitter.com/' +
+                          item.from_user + '/status/' + item.id_str;                  
+                      // yfrog                                                    
+                      if (mediaurl.indexOf('http://yfrog.com') === 0) {
+                        var id = mediaurl.replace('http://yfrog.com/', '');
+                        var options = {
+                          url: 'http://yfrog.com/api/xmlInfo?path=' + id
+                        };
+                        (function(message, user, timestamp, published) {
+                          request.get(options, function(err, result, body) {
+                            mediaurl = scrapeYfrog(body);
                             if (mediaurl) {
                               results.push({
                                 mediaurl: mediaurl,
@@ -979,83 +966,117 @@ function search(req, res, next) {
                             if (pendingUrls === numberOfUrls) {                                                
                               collectResults(
                                   results, currentService, pendingRequests);
-                            }                              
-                          });                            
-                        });
-                      })(message, user, timestamp, published);    
-                    // img.ly                      
-                    } else if (mediaurl.indexOf('http://img.ly') === 0) {                        
-                      var id = mediaurl.replace('http://img.ly/', '');
-                      var options = {
-                        url: 'http://img.ly/' + id + '/full'
-                      };
-                      (function(message, user, timestamp, published) {                        
-                        request.get(options, function(err, res, body) {
-                          scrapeImgLy(body, function(mediaurl) {
-                            if (mediaurl) {
-                              results.push({
-                                mediaurl: mediaurl,
-                                storyurl: storyurl,
-                                message: message,
-                                user: user,
-                                type: 'photo',
-                                timestamp: timestamp,
-                                published: published
-                              });  
                             }
-                            pendingUrls++;           
+                          });
+                        })(message, user, timestamp, published);
+                      // TwitPic  
+                      } else if (mediaurl.indexOf('http://twitpic.com') === 0) {                        
+                        var id = mediaurl.replace('http://twitpic.com/', '');
+                        var options = {
+                          url: 'http://twitpic.com/' + id + '/full'
+                        };
+                        (function(message, user, timestamp, published) {                        
+                          request.get(options, function(err, res, body) {
+                            scrapeTwitPic(body, function(mediaurl) {
+                              if (mediaurl) {
+                                results.push({
+                                  mediaurl: mediaurl,
+                                  storyurl: storyurl,
+                                  message: message,
+                                  user: user,
+                                  type: 'photo',
+                                  timestamp: timestamp,
+                                  published: published
+                                });  
+                              }
+                              pendingUrls++;           
+                              if (pendingUrls === numberOfUrls) {                                                
+                                collectResults(
+                                    results, currentService, pendingRequests);
+                              }                              
+                            });                            
+                          });
+                        })(message, user, timestamp, published);    
+                      // img.ly                                            
+                      } else if (mediaurl.indexOf('http://img.ly') === 0) {                                                                        
+                        var id = mediaurl.replace('http://img.ly/', '');
+                        var options = {
+                          url: 'http://img.ly/' + id
+                        };
+                        (function(message, user, timestamp, published) {                        
+                          request.get(options, function(err, res, body) {
+                            scrapeImgLy(body, function(mediaurl) {
+                              if (mediaurl) {
+                                results.push({
+                                  mediaurl: mediaurl,
+                                  storyurl: storyurl,
+                                  message: message,
+                                  user: user,
+                                  type: 'photo',
+                                  timestamp: timestamp,
+                                  published: published
+                                });  
+                              }
+                              pendingUrls++;           
+                              if (pendingUrls === numberOfUrls) {                                                
+                                collectResults(
+                                    results, currentService, pendingRequests);
+                              }                              
+                            });                            
+                          });
+                        })(message, user, timestamp, published);                                              
+                      // Instagram  
+                      } else if (mediaurl.indexOf('http://instagr.am') === 0) {                        
+                        var id = mediaurl.replace('http://instagr.am/p/', '');
+                        var options = {
+                          url: 'https://api.instagram.com/v1/media/' + id + 
+                              '?access_token=' + GLOBAL_config.INSTAGRAM_KEY
+                        };
+                        (function(message, user, timestamp, published) {                        
+                          request.get(options, function(err, result, body) {
+                            try {
+                              body = JSON.parse(body);
+                              if ((body.data) && (body.data.images) &&    
+                                  (body.data.images.standard_resolution ) &&
+                                  (body.data.images.standard_resolution.url)) {
+                                results.push({
+                                  mediaurl:
+                                      body.data.images.standard_resolution.url,
+                                  storyurl: storyurl,
+                                  message: message,
+                                  user: user,
+                                  type: 'photo',
+                                  timestamp: timestamp,
+                                  published: published
+                                });                                           
+                              }
+                            } catch(e) {
+                              // noop
+                            }
+                            pendingUrls++;
                             if (pendingUrls === numberOfUrls) {                                                
                               collectResults(
                                   results, currentService, pendingRequests);
                             }                              
-                          });                            
-                        });
-                      })(message, user, timestamp, published);                                              
-                    // Instagram  
-                    } else if (mediaurl.indexOf('http://instagr.am') === 0) {                        
-                      var id = mediaurl.replace('http://instagr.am/p/', '');
-                      var options = {
-                        url: 'https://api.instagram.com/v1/media/' + id + 
-                            '?access_token=' + GLOBAL_config.INSTAGRAM_KEY
-                      };
-                      (function(message, user, timestamp, published) {                        
-                        request.get(options, function(err, result, body) {
-                          body = JSON.parse(body);
-                          if ((body.data) && (body.data.images) &&    
-                              (body.data.images.standard_resolution ) &&
-                              (body.data.images.standard_resolution.url)) {
-                            results.push({
-                              mediaurl:
-                                  body.data.images.standard_resolution.url,
-                              storyurl: storyurl,
-                              message: message,
-                              user: user,
-                              type: 'photo',
-                              timestamp: timestamp,
-                              published: published
-                            });                                           
-                          }
-                          pendingUrls++;
-                          if (pendingUrls === numberOfUrls) {                                                
-                            collectResults(
-                                results, currentService, pendingRequests);
-                          }                              
-                        });
-                      })(message, user, timestamp, published);                                                
-                    // URL from unsupported media platform, don't consider it  
+                          });
+                        })(message, user, timestamp, published);                                                
+                      // URL from unsupported media platform, don't consider it  
+                      } else {
+                        numberOfUrls--;
+                      }
                     } else {
                       numberOfUrls--;
                     }
-                  } else {
-                    numberOfUrls--;
-                  }
-                  locationIndex++;
-                });
-              }                
-            }
-          );            
-        } else {
-          collectResults([], currentService, pendingRequests);
+                    locationIndex++;
+                  });
+                }                
+              }
+            );            
+          } else {
+            collectResults([], currentService, pendingRequests);
+          }
+        } catch(e) {
+          collectResults([], currentService, pendingRequests);          
         }          
       });               
     },
@@ -1073,29 +1094,33 @@ function search(req, res, next) {
         headers: GLOBAL_config.HEADERS
       };
       request.get(options, function(err, reply, body) { 
-        body = JSON.parse(body);
-        var results = [];
-        if ((body.data) && (body.data.length)) {
-          var items = body.data;
-          for (var i = 0, len = items.length; i < len; i++) {
-            var item = items[i];
-            var timestamp = parseInt(item.created_time + '000', 10);
-            var message = '';
-            message += (item.caption && item.caption.text ?
-                item.caption.text : '');
-            message += (message.length ? '. ' : '') + 
-                (item.tags && Array.isArray(item.tags) ?
-                    item.tags.join(', ') : '');
-            results.push({
-              mediaurl: item.images.standard_resolution.url, 
-              storyurl: item.link,
-              message: cleanMessage(message),
-              user: 'https://api.instagram.com/v1/users/' + item.user.id,
-              type: item.type === 'image'? 'photo' : '',
-              timestamp: timestamp,
-              published: getIsoDateString(timestamp)
-            });
+        try {
+          body = JSON.parse(body);
+          var results = [];
+          if ((body.data) && (body.data.length)) {
+            var items = body.data;
+            for (var i = 0, len = items.length; i < len; i++) {
+              var item = items[i];
+              var timestamp = parseInt(item.created_time + '000', 10);
+              var message = '';
+              message += (item.caption && item.caption.text ?
+                  item.caption.text : '');
+              message += (message.length ? '. ' : '') + 
+                  (item.tags && Array.isArray(item.tags) ?
+                      item.tags.join(', ') : '');
+              results.push({
+                mediaurl: item.images.standard_resolution.url, 
+                storyurl: item.link,
+                message: cleanMessage(message),
+                user: 'https://api.instagram.com/v1/users/' + item.user.id,
+                type: item.type === 'image'? 'photo' : '',
+                timestamp: timestamp,
+                published: getIsoDateString(timestamp)
+              });
+            }
           }
+        } catch(e) {
+          // noop
         }
         collectResults(results, currentService, pendingRequests);
       });
@@ -1119,41 +1144,45 @@ function search(req, res, next) {
         headers: GLOBAL_config.HEADERS
       };
       request.get(options, function(err, reply, body) {        
-        body = JSON.parse(body);          
-        var results = [];
-        if ((body.data) && (body.data.items)) {
-          var items = body.data.items;
-          Step(
-            function() {
-              var group = this.group();            
-              items.forEach(function(item) {
-                if (item.accessControl.embed !== 'allowed') {
-                  return;
-                }
-                var cb = group();
-                var timestamp = Date.parse(item.uploaded);
-                var url = item.player.default;
-                cleanVideoUrl(url, function(cleanedVideoUrl) {
-                  results.push({
-                    mediaurl: cleanedVideoUrl,
-                    storyurl: url,
-                    message: cleanMessage(
-                        item.title + '. ' + item.description),
-                    user: 'http://www.youtube.com/' + item.uploader,
-                    type: 'video',
-                    timestamp: timestamp,
-                    published: getIsoDateString(timestamp)
-                  });                    
-                  cb(null);
+        try {
+          body = JSON.parse(body);          
+          var results = [];
+          if ((body.data) && (body.data.items)) {
+            var items = body.data.items;
+            Step(
+              function() {
+                var group = this.group();            
+                items.forEach(function(item) {
+                  if (item.accessControl.embed !== 'allowed') {
+                    return;
+                  }
+                  var cb = group();
+                  var timestamp = Date.parse(item.uploaded);
+                  var url = item.player.default;
+                  cleanVideoUrl(url, function(cleanedVideoUrl) {
+                    results.push({
+                      mediaurl: cleanedVideoUrl,
+                      storyurl: url,
+                      message: cleanMessage(
+                          item.title + '. ' + item.description),
+                      user: 'http://www.youtube.com/' + item.uploader,
+                      type: 'video',
+                      timestamp: timestamp,
+                      published: getIsoDateString(timestamp)
+                    });                    
+                    cb(null);
+                  });
                 });
-              });
-            },
-            function(err) {
-              collectResults(results, currentService, pendingRequests);                
-            }
-          );              
-        } else {
-          collectResults(results, currentService, pendingRequests);                            
+              },
+              function(err) {
+                collectResults(results, currentService, pendingRequests);                
+              }
+            );              
+          } else {
+            collectResults(results, currentService, pendingRequests);                            
+          }
+        } catch(e) {
+          collectResults(results, currentService, pendingRequests);                                      
         }
       });
     },
@@ -1181,105 +1210,117 @@ function search(req, res, next) {
         headers: GLOBAL_config.HEADERS
       };
       request.get(options, function(err, reply, body) {        
+        try {
           body = JSON.parse(body);
-        var results = [];
-        if ((body.photos) && (body.photos.photo)) {
-          var photos = body.photos.photo;
-          Step(     
-            function() {              
-              var group = this.group();
-              for (var i = 0, len = photos.length; i < len; i++) {
-                var photo = photos[i];
-                if (photo.ispublic) {                
-                  var params = {
-                    method: 'flickr.photos.getInfo',
-                    api_key: GLOBAL_config.FLICKR_KEY,
-                    format: 'json',
-                    nojsoncallback: 1,
-                    photo_id: photo.id
-                  };
-                  params = querystring.stringify(params);
-                  var options = {
-                    url: 'http://api.flickr.com/services/rest/?' + params,
-                    headers: GLOBAL_config.HEADERS
-                  };
-                  var cb = group();                
-                  request.get(options, function(err2, reply2, body2) {        
-                      body2 = JSON.parse(body2);                
-                    var tags = [];
-                    if ((body2.photo) &&
-                        (body2.photo.tags) && 
-                        (body2.photo.tags.tag) &&
-                        (Array.isArray(body2.photo.tags.tag))) {
-                      body2.photo.tags.tag.forEach(function(tag) {
-                        tags.push(tag._content);                          
-                      });
-                    }
-                    var photo2 = body2.photo;
-                    var timestamp = Date.parse(photo2.dates.taken);
+          var results = [];
+          if ((body.photos) && (body.photos.photo)) {
+            var photos = body.photos.photo;
+            Step(     
+              function() {              
+                var group = this.group();
+                for (var i = 0, len = photos.length; i < len; i++) {
+                  var photo = photos[i];
+                  if (photo.ispublic) {                
                     var params = {
-                      method: 'flickr.photos.getSizes',
+                      method: 'flickr.photos.getInfo',
                       api_key: GLOBAL_config.FLICKR_KEY,
                       format: 'json',
                       nojsoncallback: 1,
-                      photo_id: photo2.id
+                      photo_id: photo.id
                     };
                     params = querystring.stringify(params);
                     var options = {
                       url: 'http://api.flickr.com/services/rest/?' + params,
                       headers: GLOBAL_config.HEADERS
                     };
-                    request.get(options, function(err, res2, body) {
-                      body = JSON.parse(body); 
-                      if ((body.sizes) && (body.sizes.size) &&
-                          (Array.isArray(body.sizes.size))) {
-                        var mediaurl = false;                                
-                        body.sizes.size.forEach(function(size) {                              
-                          // take the picture in the best-possible
-                          // resolution
-                          if ((!videoSearch) &&
-                              ((size.label === 'Original') ||
-                               (size.label === 'Large') ||
-                               (size.label === 'Medium 640') ||
-                               (size.label === 'Medium 640') ||
-                               (size.label === 'Medium') ||
-                               (size.label === 'Small') ||
-                               (size.label === 'Thumbnail') ||
-                               (size.label === 'Square'))) {
-                            mediaurl = size.source;
-                          }
-                          // take the video in the best-possible quality
-                          if ((videoSearch) &&
-                              ((size.label === 'Site MP4') ||
-                               (size.label === 'Mobile MP4'))) {
-                            mediaurl = size.source;
+                    var cb = group();                
+                    request.get(options, function(err2, reply2, body2) {        
+                      try {
+                        body2 = JSON.parse(body2);                
+                        var tags = [];
+                        if ((body2.photo) &&
+                            (body2.photo.tags) && 
+                            (body2.photo.tags.tag) &&
+                            (Array.isArray(body2.photo.tags.tag))) {
+                          body2.photo.tags.tag.forEach(function(tag) {
+                            tags.push(tag._content);                          
+                          });
+                        }
+                        var photo2 = body2.photo;
+                        var timestamp = Date.parse(photo2.dates.taken);
+                        var params = {
+                          method: 'flickr.photos.getSizes',
+                          api_key: GLOBAL_config.FLICKR_KEY,
+                          format: 'json',
+                          nojsoncallback: 1,
+                          photo_id: photo2.id
+                        };
+                        params = querystring.stringify(params);
+                        var options = {
+                          url: 'http://api.flickr.com/services/rest/?' + params,
+                          headers: GLOBAL_config.HEADERS
+                        };
+                        request.get(options, function(err, res2, body) {
+                          try {
+                            body = JSON.parse(body); 
+                            if ((body.sizes) && (body.sizes.size) &&
+                                (Array.isArray(body.sizes.size))) {
+                              var mediaurl = false;                                
+                              body.sizes.size.forEach(function(size) {                              
+                                // take the picture in the best-possible
+                                // resolution
+                                if ((!videoSearch) &&
+                                    ((size.label === 'Original') ||
+                                     (size.label === 'Large') ||
+                                     (size.label === 'Medium 640') ||
+                                     (size.label === 'Medium 640') ||
+                                     (size.label === 'Medium') ||
+                                     (size.label === 'Small') ||
+                                     (size.label === 'Thumbnail') ||
+                                     (size.label === 'Square'))) {
+                                  mediaurl = size.source;
+                                }
+                                // take the video in the best-possible quality
+                                if ((videoSearch) &&
+                                    ((size.label === 'Site MP4') ||
+                                     (size.label === 'Mobile MP4'))) {
+                                  mediaurl = size.source;
+                                }
+                              });
+                              results.push({
+                                mediaurl: mediaurl,
+                                storyurl: 'http://www.flickr.com/photos/' +
+                                    photo2.owner.nsid + '/' + photo2.id + '/',
+                                message: cleanMessage(photo2.title._content +
+                                    '. ' + photo2.description._content +
+                                    tags.join(', ')),
+                                user: 'http://www.flickr.com/photos/' +
+                                    photo2.owner.nsid + '/',
+                                type: (videoSearch ? 'video' : 'photo'),
+                                timestamp: timestamp,
+                                published: getIsoDateString(timestamp)
+                              });
+                            }
+                            cb();                                                    
+                          } catch(e) {
+                            cb();                              
                           }
                         });
-                        results.push({
-                          mediaurl: mediaurl,
-                          storyurl: 'http://www.flickr.com/photos/' +
-                              photo2.owner.nsid + '/' + photo2.id + '/',
-                          message: cleanMessage(photo2.title._content +
-                              '. ' + photo2.description._content +
-                              tags.join(', ')),
-                          user: 'http://www.flickr.com/photos/' +
-                              photo2.owner.nsid + '/',
-                          type: (videoSearch ? 'video' : 'photo'),
-                          timestamp: timestamp,
-                          published: getIsoDateString(timestamp)
-                        });
-                      }
-                      cb();                                                    
-                    });                    
-                  })
+                      } catch(e) {
+                        cb();
+                      }                    
+                    })
+                  }
                 }
+              },
+              function() {
+                collectResults(results, currentService, pendingRequests);
               }
-            },
-            function() {
-              collectResults(results, currentService, pendingRequests);
-            }
-          );
-        } else {
+            );
+          } else {
+            collectResults([], currentService, pendingRequests);
+          }
+        } catch(e) {
           collectResults([], currentService, pendingRequests);
         }
       });
@@ -1299,26 +1340,30 @@ function search(req, res, next) {
         headers: GLOBAL_config.HEADERS
       };
       request.get(options, function(err, reply, body) {        
-        body = JSON.parse(body);
         var results = [];
-        if ((body.results) && (body.results.length)) {
-          var items = body.results;            
-          for (var i = 0, len = items.length; i < len; i++) {
-            var item = items[i];
-            var timestamp = item.post.created_on_epoch;
-            results.push({
-              mediaurl: item.post.media.url_full,
-              storyurl: item.post.link,
-              message: cleanMessage(
-                  item.post.title + '. ' + item.post.description),
-              user: item.user.url,
-              type: item.post.media.type,
-              timestamp: timestamp,
-              published: getIsoDateString(timestamp)
-            });
+        try {
+          body = JSON.parse(body);          
+          if ((body.results) && (body.results.length)) {
+            var items = body.results;            
+            for (var i = 0, len = items.length; i < len; i++) {
+              var item = items[i];
+              var timestamp = item.post.created_on_epoch;
+              results.push({
+                mediaurl: item.post.media.url_full,
+                storyurl: item.post.link,
+                message: cleanMessage(
+                    item.post.title + '. ' + item.post.description),
+                user: item.user.url,
+                type: item.post.media.type,
+                timestamp: timestamp,
+                published: getIsoDateString(timestamp)
+              });
+            }
           }
+          collectResults(results, currentService, pendingRequests);
+        } catch(e) {
+          collectResults(results, currentService, pendingRequests);
         }
-        collectResults(results, currentService, pendingRequests);
       });
     },
     TwitPic: function(pendingRequests) {   
@@ -1334,68 +1379,76 @@ function search(req, res, next) {
         url: 'http://web1.twitpic.com/search/show?' + params,
         headers: GLOBAL_config.HEADERS
       };
-      request.get(options, function(err, reply, body) {        
-        body = JSON.parse(body);
+      request.get(options, function(err, reply, body) {                
         var results = [];
-        if (body.length) {            
-          Step(
-            function() {
-              var group = this.group();
-              for (var i = 0, len = body.length; i < len; i++) {
-                var item = body[i];
-                var id = item.link.replace(/.*?\/(\w+)$/, '$1');
-                var params = {
-                  id: id
-                };
-                params = querystring.stringify(params);
-                var options = {
-                  url: 'http://api.twitpic.com/2/media/show.json?' + params,
-                  headers: GLOBAL_config.HEADERS
-                };
-                var cb = group();                  
-                request.get(options, function(err2, reply2, body2) {        
-                  if (body2) {
-                    body2 = JSON.parse(body2);                  
-                  } else {
-                    return cb();
-                  }
-                  if (!body2.errors) {                      
-                    var timestamp = Date.parse(body2.timestamp);
-                    var options = {
-                      url: 'http://twitpic.com/' +
-                          body2.short_id + '/full',
-                      headers: GLOBAL_config.HEADERS                          
-                    };
-                    request.get(options, function(err3, res3, body3) {          
-                      scrapeTwitPic(body3, function(mediaUrl) {
-                        if (mediaUrl) {
-                          results.push({
-                            mediaurl: mediaUrl,
-                            storyurl: 'http://twitpic.com/' +
-                                body2.short_id,
-                            message: cleanMessage(body2.message), 
-                            user: 'http://twitter.com/' +
-                                body2.user.username,
-                            type: 'photo',
-                            timestamp: timestamp,
-                            published: getIsoDateString(timestamp)
-                          });
-                        }
-                        cb();                            
+        try {
+          body = JSON.parse(body);
+          if (body.length) {            
+            Step(
+              function() {
+                var group = this.group();
+                for (var i = 0, len = body.length; i < len; i++) {
+                  var item = body[i];
+                  var id = item.link.replace(/.*?\/(\w+)$/, '$1');
+                  var params = {
+                    id: id
+                  };
+                  params = querystring.stringify(params);
+                  var options = {
+                    url: 'http://api.twitpic.com/2/media/show.json?' + params,
+                    headers: GLOBAL_config.HEADERS
+                  };
+                  var cb = group();                  
+                  request.get(options, function(err2, reply2, body2) {        
+                    if (body2) {
+                      try {
+                        body2 = JSON.parse(body2);                  
+                      } catch(e) {
+                        return cb();
+                      }
+                    } else {
+                      return cb();
+                    }
+                    if (!body2.errors) {                      
+                      var timestamp = Date.parse(body2.timestamp);
+                      var options = {
+                        url: 'http://twitpic.com/' +
+                            body2.short_id + '/full',
+                        headers: GLOBAL_config.HEADERS                          
+                      };
+                      request.get(options, function(err3, res3, body3) {          
+                        scrapeTwitPic(body3, function(mediaUrl) {
+                          if (mediaUrl) {
+                            results.push({
+                              mediaurl: mediaUrl,
+                              storyurl: 'http://twitpic.com/' +
+                                  body2.short_id,
+                              message: cleanMessage(body2.message), 
+                              user: 'http://twitter.com/' +
+                                  body2.user.username,
+                              type: 'photo',
+                              timestamp: timestamp,
+                              published: getIsoDateString(timestamp)
+                            });
+                          }
+                          cb();                            
+                        });
                       });
-                    });
-                  } else {
-                    cb();
-                  }
-                });
+                    } else {
+                      cb();
+                    }
+                  });
+                }
+              },
+              function() {
+                collectResults(results, currentService, pendingRequests);
               }
-            },
-            function() {
-              collectResults(results, currentService, pendingRequests);
-            }
-          );
-        } else {
-          collectResults(results, currentService, pendingRequests);
+            );
+          } else {
+            collectResults(results, currentService, pendingRequests);
+          }
+        } catch(e) {
+          collectResults(results, currentService, pendingRequests);          
         }
       });
     }
