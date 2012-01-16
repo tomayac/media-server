@@ -1370,14 +1370,15 @@ function search(req, res, next) {
       var currentService = 'TwitPic';   
       if (GLOBAL_config.DEBUG) console.log(currentService + ' *** ' + query);             
       var params = {
-        type: 'mixed',
         page: 1,
         q: query
       };
       params = querystring.stringify(params);
+      var headers = GLOBAL_config.HEADERS;
+      headers['X-Requested-With'] = 'XMLHttpRequest';
       var options = {
-        url: 'http://web1.twitpic.com/search/show?' + params,
-        headers: GLOBAL_config.HEADERS
+        url: 'http://twitpic.com/search/show?' + params,
+        headers: headers
       };
       request.get(options, function(err, reply, body) {                
         var results = [];
