@@ -171,43 +171,84 @@ function search(req, res, next) {
   /**
    * Replaces HTML entities
    */
-  function replaceHtmlEntities(message) {
-    message = message.replace(/&quot;/gi, '\"');
-    message = message.replace(/&apos;/gi, '\'');
-    message = message.replace(/&#39;/gi, '\'');
-    message = message.replace(/&amp;/gi, '&');
-    message = message.replace(/&gt;/gi, '>');
-    message = message.replace(/&lt;/gi, '<');
-    return message;
+  function replaceHtmlEntities(micropost) {
+    micropost = micropost.replace(/&quot;/gi, '\"');
+    micropost = micropost.replace(/&apos;/gi, '\'');
+    micropost = micropost.replace(/&#39;/gi, '\'');
+    micropost = micropost.replace(/&amp;/gi, '&');
+    micropost = micropost.replace(/&gt;/gi, '>');
+    micropost = micropost.replace(/&lt;/gi, '<');
+    return micropost;
   }
 
   /**
    * Removes line breaks, double spaces, HTML tags, HTML entities, etc.
    */
-  function cleanMessage(message) {
-    if (message) {
+  function cleanMicropost(micropost) {
+    function strip_tags(input, allowed) {
+      // http://kevin.vanzonneveld.net
+      // +   original by: Kevin van Zonneveld (http://kevin.vanzonneveld.net)
+      // +   improved by: Luke Godfrey
+      // +      input by: Pul
+      // +   bugfixed by: Kevin van Zonneveld (http://kevin.vanzonneveld.net)
+      // +   bugfixed by: Onno Marsman
+      // +      input by: Alex
+      // +   bugfixed by: Kevin van Zonneveld (http://kevin.vanzonneveld.net)
+      // +      input by: Marc Palau
+      // +   improved by: Kevin van Zonneveld (http://kevin.vanzonneveld.net)
+      // +      input by: Brett Zamir (http://brett-zamir.me)
+      // +   bugfixed by: Kevin van Zonneveld (http://kevin.vanzonneveld.net)
+      // +   bugfixed by: Eric Nagel
+      // +      input by: Bobby Drake
+      // +   bugfixed by: Kevin van Zonneveld (http://kevin.vanzonneveld.net)
+      // +   bugfixed by: Tomasz Wesolowski
+      // +      input by: Evertjan Garretsen
+      // +    revised by: Rafał Kukawski (http://blog.kukawski.pl/)
+      // *     example 1: strip_tags('<p>Kevin</p> <br /><b>van</b> <i>Zonneveld</i>', '<i><b>');
+      // *     returns 1: 'Kevin <b>van</b> <i>Zonneveld</i>'
+      // *     example 2: strip_tags('<p>Kevin <img src="someimage.png" onmouseover="someFunction()">van <i>Zonneveld</i></p>', '<p>');
+      // *     returns 2: '<p>Kevin van Zonneveld</p>'
+      // *     example 3: strip_tags("<a href='http://kevin.vanzonneveld.net'>Kevin van Zonneveld</a>", "<a>");
+      // *     returns 3: '<a href='http://kevin.vanzonneveld.net'>Kevin van Zonneveld</a>'
+      // *     example 4: strip_tags('1 < 5 5 > 1');
+      // *     returns 4: '1 < 5 5 > 1'
+      // *     example 5: strip_tags('1 <br/> 1');
+      // *     returns 5: '1  1'
+      // *     example 6: strip_tags('1 <br/> 1', '<br>');
+      // *     returns 6: '1  1'
+      // *     example 7: strip_tags('1 <br/> 1', '<br><br/>');
+      // *     returns 7: '1 <br/> 1'
+      allowed = (((allowed || "") + "").toLowerCase().match(/<[a-z][a-z0-9]*>/g) || []).join(''); // making sure the allowed arg is a string containing only tags in lowercase (<a><b><c>)
+      var tags = /<\/?([a-z][a-z0-9]*)\b[^>]*>/gi,
+        commentsAndPhpTags = /<!--[\s\S]*?-->|<\?(?:php)?[\s\S]*?\?>/gi;
+      return input.replace(commentsAndPhpTags, '').replace(tags, function($0, $1) {
+        return allowed.indexOf('<' + $1.toLowerCase() + '>') > -1 ? $0 : '';
+      });
+    }
+
+    if (micropost) {
       // replace HTML entities
-      message = replaceHtmlEntities(message);
+      micropost = replaceHtmlEntities(micropost);
       // remove HTML tags. regular expression stolen from
-      // https://raw.github.com/kvz/phpjs/master/functions/strings/strip_tags.js
-      var cleanMessage = message.replace(GLOBAL_config.TAG_REGEX, '');
-      // replace line feeds and duplicate spaces
-      message = message.replace(/[\n\r\t]/gi, ' ').replace(/\s+/g, ' ');
+      var cleanMicropost = strip_tags(micropost);
       //all regular expressions below stolen from
       // https://raw.github.com/cramforce/streamie/master/public/lib/stream/-
       // streamplugins.js
       //
       // remove urls
-      cleanMessage = cleanMessage.replace(GLOBAL_config.URL_REGEX, ' ');
+      cleanMicropost = cleanMicropost.replace(GLOBAL_config.URL_REGEX, ' ');
       // simplify #hashtags to hashtags
-      cleanMessage = cleanMessage.replace(GLOBAL_config.HASHTAG_REGEX, ' $2');
+      cleanMicropost = cleanMicropost.replace(GLOBAL_config.HASHTAG_REGEX, ' $2');
       // simplify @username to username
-      cleanMessage = cleanMessage.replace(GLOBAL_config.USER_REGEX, ' $2');
+      cleanMicropost = cleanMicropost.replace(GLOBAL_config.USER_REGEX, ' $2');
       // simplify +username to username
-      cleanMessage = cleanMessage.replace(GLOBAL_config.PLUS_REGEX, ' $2');
+      cleanMicropost = cleanMicropost.replace(GLOBAL_config.PLUS_REGEX, ' $2');
+      // replace line feeds and duplicate spaces
+      micropost = micropost.replace(/[\n\r\t]/gi, ' ').replace(/\s+/g, ' ');
+      cleanMicropost = cleanMicropost.replace(/[\n\r\t]/gi, ' ').replace(/\s+/g, ' ');
       return {
-        text: message.replace(/^\s+|\s+$/, ''), // trim
-        clean: cleanMessage.replace(/^\s+|\s+$/, '') // trim
+        html: micropost.trim(),
+        plaintext: cleanMicropost.trim()
       };
     }
   }
@@ -233,12 +274,12 @@ function search(req, res, next) {
    * Scrapes TwitPic
    */
   function scrapeTwitPic(body, callback) {
-    var mediaurl = false;
+    var mediaUrl = false;
     jsdom.env(body, function(errors, window) {
       var $ = window.document;
       try {
-        mediaurl = $.getElementsByTagName('IMG')[1].src;
-        callback(mediaurl);
+        mediaUrl = $.getElementsByTagName('IMG')[1].src;
+        callback(mediaUrl);
       } catch(e) {
         if (body.indexOf('error') === -1) {
           throw('ERROR: TwitPic screen scraper broken');
@@ -252,13 +293,13 @@ function search(req, res, next) {
    * Scrapes img.ly
    */
   function scrapeImgLy(body, callback) {
-    var mediaurl = false;
+    var mediaUrl = false;
     jsdom.env(body, function(errors, window) {
       var $ = window.document;
       var match = 'the-image';
       try {
-        mediaurl = $.getElementById(match).src;
-        callback(mediaurl);
+        mediaUrl = $.getElementById(match).src;
+        callback(mediaUrl);
       } catch(e) {
         throw('ERROR: img.ly screen scraper broken');
         callback(false);
@@ -306,7 +347,7 @@ function search(req, res, next) {
   }
 
   /**
-   * Annotates messages with DBpedia Spotlight
+   * Annotates microposts with DBpedia Spotlight
    */
   function spotlight(json) {
     if (!GLOBAL_config.NAMED_ENTITY_EXTRACTION) {
@@ -332,14 +373,14 @@ function search(req, res, next) {
           collector[serviceName] = [];
           service.forEach(function(item, i) {
             var text;
-            if ((item.message.translation) &&
-                (item.message.translation.text) &&
-                (item.message.translation.language !== 'en')) {
+            if ((item.micropost.translation) &&
+                (item.micropost.translation.text) &&
+                (item.micropost.translation.language !== 'en')) {
               // for non-English texts, use the translation if it exists
-              text = item.message.translation.text;
+              text = item.micropost.translation.text;
             } else {
               // use the original version
-              text = item.message.clean;
+              text = item.micropost.clean;
             }
             if (httpMethod === 'POST') {
               options.headers['Content-Type'] =
@@ -411,17 +452,17 @@ function search(req, res, next) {
         services.forEach(function(serviceName) {
           var service = json[serviceName] || [];
           service.forEach(function(item, i) {
-            item.message.entities = collector[serviceName][i];
+            item.micropost.entities = collector[serviceName][i];
             // part of speech tagging, PoS
             if (GLOBAL_config.PART_OF_SPEECH) {
               var words;
-              if ((item.message.translation) &&
-                  (item.message.translation.text) &&
-                  (item.message.translation.language !== 'en')) {
+              if ((item.micropost.translation) &&
+                  (item.micropost.translation.text) &&
+                  (item.micropost.translation.language !== 'en')) {
                 // for non-English texts, use the translation if it exists
-                words = new Lexer().lex(item.message.translation.text);
+                words = new Lexer().lex(item.micropost.translation.text);
               } else {
-                words = new Lexer().lex(item.message.clean);
+                words = new Lexer().lex(item.micropost.clean);
               }
               var taggedWords = new POSTagger().tag(words);
               var result = [];
@@ -438,7 +479,7 @@ function search(req, res, next) {
                     tag: tag
                   });
                 }
-                item.message.nouns = result;
+                item.micropost.nouns = result;
               }
             }
           });
@@ -449,7 +490,7 @@ function search(req, res, next) {
   }
 
   /**
-   * Translates messages one by one
+   * Translates microposts one by one
    */
   function translate(json) {
     if (GLOBAL_config.DEBUG) console.log('translate');
@@ -501,7 +542,7 @@ function search(req, res, next) {
           var service = json[serviceName] || [];
           collector[serviceName] = [];
           service.forEach(function(item, i) {
-            var text = item.message.clean;
+            var text = item.micropost.clean;
             if (GLOBAL_config.USE_GOOGLE_RESEARCH_API) {
               //options.body = 'tl=en&q=' + encodeURIComponent(text);
               options.body += '&q=' + encodeURIComponent(text);
@@ -551,7 +592,7 @@ function search(req, res, next) {
         services.forEach(function(serviceName) {
           var service = json[serviceName] || [];
           service.forEach(function(item, i) {
-            item.message.translation = collector[serviceName][i];
+            item.micropost.translation = collector[serviceName][i];
           });
         });
         spotlight(json);
@@ -635,9 +676,9 @@ function search(req, res, next) {
                       (attachment.objectType !== 'video')) {
                     return;
                   }
-                  // the message can consist of different parts, dependent on
+                  // the micropost can consist of different parts, dependent on
                   // the item type
-                  var message = cleanMessage(
+                  var micropost = cleanMicropost(
                       (item.object.content ?
                           item.object.content : '') +
                       (item.title ?
@@ -646,23 +687,30 @@ function search(req, res, next) {
                           ' ' + item.annotation : '') +
                       (attachment.displayName ?
                           ' ' + attachment.displayName : ''));
-                  if (message) {
-                    var mediaurl = '';
+                  if (micropost) {
+                    var mediaUrl = '';
                     if (attachment.embed) {
-                      mediaurl = attachment.embed.url;
+                      mediaUrl = attachment.embed.url;
                     } else if (attachment.image) {
-                      mediaurl = attachment.image.url;
+                      mediaUrl = attachment.image.url;
                     }
-                    cleanVideoUrl(mediaurl, function(cleanedMediaUrl) {
+                    cleanVideoUrl(mediaUrl, function(cleanedMediaUrl) {
                       if (cleanedMediaUrl) {
                         results.push({
-                          mediaurl: cleanedMediaUrl,
-                          storyurl: item.url,
-                          message: message,
-                          user: item.actor.url,
+                          mediaUrl: cleanedMediaUrl,
+                          posterUrl: null,
+                          micropostUrl: item.url,
+                          micropost: micropost,
+                          userProfileUrl: item.actor.url,
                           type: attachment.objectType,
                           timestamp: (new Date(item.published)).getTime(),
-                          published: item.published
+                          publicationDate: item.published,
+                          socialInteractions: {
+                            likes: null,
+                            shares: null,
+                            comments: null,
+                            views: null
+                          }
                         });
                       }
                     });
@@ -708,24 +756,31 @@ function search(req, res, next) {
                 var group = this.group();
                 items.forEach(function(item) {
                   var cb = group();
-                  var user = item.profileUrl;
-                  var storyurl = user + '/photos/' + item.imageId;
-                  var mediaurl = item.thumbnailUrl.replace(/m\.jpg$/, 'l.jpg');
+                  var userProfileUrl = item.profileUrl;
+                  var micropostUrl = userProfileUrl + '/photos/' + item.imageId;
+                  var mediaUrl = item.thumbnailUrl.replace(/m\.jpg$/, 'l.jpg');
                   var options = {
-                    url: storyurl,
+                    url: micropostUrl,
                     headers: GLOBAL_config.HEADERS
                   };
                   request.get(options, function(err, reply, body) {
                     scrapeMySpace(body, function(scrapeResult) {
                       if (scrapeResult.timestamp && scrapeResult.caption) {
                         results.push({
-                          mediaurl: mediaurl,
-                          storyurl: storyurl,
-                          message: cleanMessage(scrapeResult.caption),
-                          user: user,
+                          mediaUrl: mediaUrl,
+                          posterUrl: null,
+                          micropostUrl: micropostUrl,
+                          micropost: cleanMicropost(scrapeResult.caption),
+                          userProfileUrl: userProfileUrl,
                           type: 'photo',
                           timestamp: scrapeResult.timestamp,
-                          published: getIsoDateString(scrapeResult.timestamp)
+                          publicationDate: getIsoDateString(scrapeResult.timestamp),
+                          socialInteractions: {
+                            likes: null,
+                            shares: null,
+                            comments: null,
+                            views: null
+                          }
                         });
                       }
                       cb(null);
@@ -791,30 +846,37 @@ function search(req, res, next) {
                   }
                   var cb = group();
                   var timestamp = Date.parse(item.created_time);
-                  var message = '';
-                  message += (item.name ? item.name : '');
-                  message += (item.caption ?
-                      (message.length ? '. ' : '') + item.caption : '');
-                  message += (item.description ?
-                      (message.length ? '. ' : '') + item.description : '');
-                  message += (item.message ?
-                      (message.length ? '. ' : '') + item.message : '');
+                  var micropost = '';
+                  micropost += (item.name ? item.name : '');
+                  micropost += (item.caption ?
+                      (micropost.length ? '. ' : '') + item.caption : '');
+                  micropost += (item.description ?
+                      (micropost.length ? '. ' : '') + item.description : '');
+                  micropost += (item.micropost ?
+                      (micropost.length ? '. ' : '') + item.micropost : '');
                   var mediaUrl = item.type === 'video' ?
                       item.source : item.picture;
                   cleanVideoUrl(mediaUrl, function(cleanedMediaUrl) {
                     if (cleanedMediaUrl) {
                       results.push({
-                        mediaurl: cleanedMediaUrl.replace(/s\.jpg$/gi, 'n.jpg'),
-                        storyurl:
+                        mediaUrl: cleanedMediaUrl.replace(/s\.jpg$/gi, 'n.jpg'),
+                        posterUrl: null,
+                        micropostUrl:
                             'https://www.facebook.com/permalink.php?story_fbid=' +
                             item.id.split(/_/)[1] + '&id=' + item.from.id,
-                        message: cleanMessage(message),
-                        user:
+                        micropost: cleanMicropost(micropost),
+                        userProfileUrl:
                             'https://www.facebook.com/profile.php?id=' +
                             item.from.id,
                         type: item.type,
                         timestamp: timestamp,
-                        published: getIsoDateString(timestamp)
+                        publicationDate: getIsoDateString(timestamp),
+                        socialInteractions: {
+                          likes: null,
+                          shares: null,
+                          comments: null,
+                          views: null
+                        }
                       });
                     }
                     cb(null);
@@ -855,29 +917,36 @@ function search(req, res, next) {
             var items = body.results;
             for (var i = 0, len = items.length; i < len; i++) {
               var item = items[i];
-              var mediaurl = '';
+              var mediaUrl = '';
               if (item.entities && item.entities.media &&
                   item.entities.media.length > 0) {
-                mediaurl = item.entities.media[0]['media_url'] ?
+                mediaUrl = item.entities.media[0]['media_url'] ?
                     item.entities.media[0]['media_url'] :
                     item.entities.media[0]['media_url_https'];
               } else {
                 continue;
               }
               var timestamp = Date.parse(item.created_at);
-              var published = getIsoDateString(timestamp)
-              var message = cleanMessage(item.text);
-              var user = 'http://twitter.com/' + item.from_user;
-              var storyurl = 'http://twitter.com/' +
+              var publicationDate = getIsoDateString(timestamp)
+              var micropost = cleanMicropost(item.text);
+              var userProfileUrl = 'http://twitter.com/' + item.from_user;
+              var micropostUrl = 'http://twitter.com/' +
                   item.from_user + '/status/' + item.id_str;
               results.push({
-                mediaurl: mediaurl,
-                storyurl: storyurl,
-                message: message,
-                user: user,
+                mediaUrl: mediaUrl,
+                posterUrl: null,
+                micropostUrl: micropostUrl,
+                micropost: micropost,
+                userProfileUrl: userProfileUrl,
                 type: 'photo',
                 timestamp: timestamp,
-                published: published
+                publicationDate: publicationDate,
+                socialInteractions: {
+                  likes: null,
+                  shares: null,
+                  comments: null,
+                  views: null
+                }
               });
             }
           }
@@ -997,32 +1066,39 @@ function search(req, res, next) {
                 for (var i = 0, len = itemStack.length; i < len; i++) {
                   var item = itemStack[i].item;
                   var timestamp = Date.parse(item.created_at);
-                  var published = getIsoDateString(timestamp)
-                  var message = cleanMessage(item.text);
-                  var user = 'http://twitter.com/' + item.from_user;
+                  var publicationDate = getIsoDateString(timestamp);
+                  var micropost = cleanMicropost(item.text);
+                  var userProfileUrl = 'http://twitter.com/' + item.from_user;
                   itemStack[i].urls.forEach(function() {
                     if (locations[locationIndex]) {
-                      var mediaurl = locations[locationIndex];
-                      var storyurl = 'http://twitter.com/' +
+                      var mediaUrl = locations[locationIndex];
+                      var micropostUrl = 'http://twitter.com/' +
                           item.from_user + '/status/' + item.id_str;
                       // yfrog
-                      if (mediaurl.indexOf('http://yfrog.com') === 0) {
-                        var id = mediaurl.replace('http://yfrog.com/', '');
+                      if (mediaUrl.indexOf('http://yfrog.com') === 0) {
+                        var id = mediaUrl.replace('http://yfrog.com/', '');
                         var options = {
                           url: 'http://yfrog.com/api/xmlInfo?path=' + id
                         };
-                        (function(message, user, timestamp, published) {
+                        (function(micropost, userProfileUrl, timestamp, publicationDate) {
                           request.get(options, function(err, result, body) {
-                            mediaurl = scrapeYfrog(body);
-                            if (mediaurl) {
+                            mediaUrl = scrapeYfrog(body);
+                            if (mediaUrl) {
                               results.push({
-                                mediaurl: mediaurl,
-                                storyurl: storyurl,
-                                message: message,
-                                user: user,
+                                mediaUrl: mediaUrl,
+                                posterUrl: null,
+                                micropostUrl: micropostUrl,
+                                micropost: micropost,
+                                userProfileUrl: userProfileUrl,
                                 type: 'photo',
                                 timestamp: timestamp,
-                                published: published
+                                publicationDate: publicationDate,
+                                socialInteractions: {
+                                  likes: null,
+                                  shares: null,
+                                  comments: null,
+                                  views: null
+                                }
                               });
                             }
                             pendingUrls++;
@@ -1031,25 +1107,32 @@ function search(req, res, next) {
                                   results, currentService, pendingRequests);
                             }
                           });
-                        })(message, user, timestamp, published);
+                        })(micropost, userProfileUrl, timestamp, publicationDate);
                       // TwitPic
-                      } else if (mediaurl.indexOf('http://twitpic.com') === 0) {
-                        var id = mediaurl.replace('http://twitpic.com/', '');
+                      } else if (mediaUrl.indexOf('http://twitpic.com') === 0) {
+                        var id = mediaUrl.replace('http://twitpic.com/', '');
                         var options = {
                           url: 'http://twitpic.com/' + id + '/full'
                         };
-                        (function(message, user, timestamp, published) {
+                        (function(micropost, userProfileUrl, timestamp, publicationDate) {
                           request.get(options, function(err, res, body) {
-                            scrapeTwitPic(body, function(mediaurl) {
-                              if (mediaurl) {
+                            scrapeTwitPic(body, function(mediaUrl) {
+                              if (mediaUrl) {
                                 results.push({
-                                  mediaurl: mediaurl,
-                                  storyurl: storyurl,
-                                  message: message,
-                                  user: user,
+                                  mediaUrl: mediaUrl,
+                                  posterUrl: null,
+                                  micropostUrl: micropostUrl,
+                                  micropost: micropost,
+                                  userProfileUrl: userProfileUrl,
                                   type: 'photo',
                                   timestamp: timestamp,
-                                  published: published
+                                  publicationDate: publicationDate,
+                                  socialInteractions: {
+                                    likes: null,
+                                    shares: null,
+                                    comments: null,
+                                    views: null
+                                  }
                                 });
                               }
                               pendingUrls++;
@@ -1059,25 +1142,32 @@ function search(req, res, next) {
                               }
                             });
                           });
-                        })(message, user, timestamp, published);
+                        })(micropost, userProfileUrl, timestamp, publicationDate);
                       // img.ly
-                      } else if (mediaurl.indexOf('http://img.ly') === 0) {
-                        var id = mediaurl.replace('http://img.ly/', '');
+                      } else if (mediaUrl.indexOf('http://img.ly') === 0) {
+                        var id = mediaUrl.replace('http://img.ly/', '');
                         var options = {
                           url: 'http://img.ly/' + id
                         };
-                        (function(message, user, timestamp, published) {
+                        (function(micropost, userProfileUrl, timestamp, publicationDate) {
                           request.get(options, function(err, res, body) {
-                            scrapeImgLy(body, function(mediaurl) {
-                              if (mediaurl) {
+                            scrapeImgLy(body, function(mediaUrl) {
+                              if (mediaUrl) {
                                 results.push({
-                                  mediaurl: mediaurl,
-                                  storyurl: storyurl,
-                                  message: message,
-                                  user: user,
+                                  mediaUrl: mediaUrl,
+                                  posterUrl: null,
+                                  micropostUrl: micropostUrl,
+                                  micropost: micropost,
+                                  userProfileUrl: userProfileUrl,
                                   type: 'photo',
                                   timestamp: timestamp,
-                                  published: published
+                                  publicationDate: publicationDate,
+                                  socialInteractions: {
+                                    likes: null,
+                                    shares: null,
+                                    comments: null,
+                                    views: null
+                                  }
                                 });
                               }
                               pendingUrls++;
@@ -1087,15 +1177,15 @@ function search(req, res, next) {
                               }
                             });
                           });
-                        })(message, user, timestamp, published);
+                        })(micropost, userProfileUrl, timestamp, publicationDate);
                       // Instagram
-                      } else if (mediaurl.indexOf('http://instagr.am') === 0) {
-                        var id = mediaurl.replace('http://instagr.am/p/', '');
+                      } else if (mediaUrl.indexOf('http://instagr.am') === 0) {
+                        var id = mediaUrl.replace('http://instagr.am/p/', '');
                         var options = {
                           url: 'https://api.instagram.com/v1/media/' + id +
                               '?access_token=' + GLOBAL_config.INSTAGRAM_KEY
                         };
-                        (function(message, user, timestamp, published) {
+                        (function(micropost, userProfileUrl, timestamp, publicationDate) {
                           request.get(options, function(err, result, body) {
                             try {
                               body = JSON.parse(body);
@@ -1103,14 +1193,21 @@ function search(req, res, next) {
                                   (body.data.images.standard_resolution ) &&
                                   (body.data.images.standard_resolution.url)) {
                                 results.push({
-                                  mediaurl:
+                                  mediaUrl:
                                       body.data.images.standard_resolution.url,
-                                  storyurl: storyurl,
-                                  message: message,
-                                  user: user,
+                                  posterUrl: null,
+                                  micropostUrl: micropostUrl,
+                                  micropost: micropost,
+                                  userProfileUrl: userProfileUrl,
                                   type: 'photo',
                                   timestamp: timestamp,
-                                  published: published
+                                  publicationDate: publicationDate,
+                                  socialInteractions: {
+                                    likes: null,
+                                    shares: null,
+                                    comments: null,
+                                    views: null
+                                  }
                                 });
                               }
                             } catch(e) {
@@ -1122,7 +1219,7 @@ function search(req, res, next) {
                                   results, currentService, pendingRequests);
                             }
                           });
-                        })(message, user, timestamp, published);
+                        })(micropost, userProfileUrl, timestamp, publicationDate);
                       // URL from unsupported media platform, don't consider it
                       } else {
                         numberOfUrls--;
@@ -1165,20 +1262,27 @@ function search(req, res, next) {
             for (var i = 0, len = items.length; i < len; i++) {
               var item = items[i];
               var timestamp = parseInt(item.created_time + '000', 10);
-              var message = '';
-              message += (item.caption && item.caption.text ?
+              var micropost = '';
+              micropost += (item.caption && item.caption.text ?
                   item.caption.text : '');
-              message += (message.length ? '. ' : '') +
+              micropost += (micropost.length ? '. ' : '') +
                   (item.tags && Array.isArray(item.tags) ?
                       item.tags.join(', ') : '');
               results.push({
-                mediaurl: item.images.standard_resolution.url,
-                storyurl: item.link,
-                message: cleanMessage(message),
-                user: 'https://api.instagram.com/v1/users/' + item.user.id,
+                mediaUrl: item.images.standard_resolution.url,
+                posterUrl: null,
+                micropostUrl: item.link,
+                micropost: cleanMicropost(micropost),
+                userProfileUrl: 'https://api.instagram.com/v1/users/' + item.user.id,
                 type: item.type === 'image'? 'photo' : '',
                 timestamp: timestamp,
-                published: getIsoDateString(timestamp)
+                publicationDate: getIsoDateString(timestamp),
+                socialInteractions: {
+                  likes: null,
+                  shares: null,
+                  comments: null,
+                  views: null
+                }
               });
             }
           }
@@ -1224,14 +1328,21 @@ function search(req, res, next) {
                   var url = item.player.default;
                   cleanVideoUrl(url, function(cleanedVideoUrl) {
                     results.push({
-                      mediaurl: cleanedVideoUrl,
-                      storyurl: url,
-                      message: cleanMessage(
+                      mediaUrl: cleanedVideoUrl,
+                      posterUrl: null,
+                      micropostUrl: url,
+                      micropost: cleanMicropost(
                           item.title + '. ' + item.description),
-                      user: 'http://www.youtube.com/' + item.uploader,
+                      userProfileUrl: 'http://www.youtube.com/' + item.uploader,
                       type: 'video',
                       timestamp: timestamp,
-                      published: getIsoDateString(timestamp)
+                      publicationDate: getIsoDateString(timestamp),
+                      socialInteractions: {
+                        likes: null,
+                        shares: null,
+                        comments: null,
+                        views: null
+                      }
                     });
                     cb(null);
                   });
@@ -1328,7 +1439,7 @@ function search(req, res, next) {
                             body = JSON.parse(body);
                             if ((body.sizes) && (body.sizes.size) &&
                                 (Array.isArray(body.sizes.size))) {
-                              var mediaurl = false;
+                              var mediaUrl = false;
                               body.sizes.size.forEach(function(size) {
                                 // take the picture in the best-possible
                                 // resolution
@@ -1341,27 +1452,34 @@ function search(req, res, next) {
                                      (size.label === 'Small') ||
                                      (size.label === 'Thumbnail') ||
                                      (size.label === 'Square'))) {
-                                  mediaurl = size.source;
+                                  mediaUrl = size.source;
                                 }
                                 // take the video in the best-possible quality
                                 if ((videoSearch) &&
                                     ((size.label === 'Site MP4') ||
                                      (size.label === 'Mobile MP4'))) {
-                                  mediaurl = size.source;
+                                  mediaUrl = size.source;
                                 }
                               });
                               results.push({
-                                mediaurl: mediaurl,
-                                storyurl: 'http://www.flickr.com/photos/' +
+                                mediaUrl: mediaUrl,
+                                posterUrl: null,
+                                micropostUrl: 'http://www.flickr.com/photos/' +
                                     photo2.owner.nsid + '/' + photo2.id + '/',
-                                message: cleanMessage(photo2.title._content +
+                                micropost: cleanMicropost(photo2.title._content +
                                     '. ' + photo2.description._content +
                                     tags.join(', ')),
-                                user: 'http://www.flickr.com/photos/' +
+                                userProfileUrl: 'http://www.flickr.com/photos/' +
                                     photo2.owner.nsid + '/',
                                 type: (videoSearch ? 'video' : 'photo'),
                                 timestamp: timestamp,
-                                published: getIsoDateString(timestamp)
+                                publicationDate: getIsoDateString(timestamp),
+                                socialInteractions: {
+                                  likes: null,
+                                  shares: null,
+                                  comments: null,
+                                  views: null
+                                }
                               });
                             }
                             cb();
@@ -1412,14 +1530,21 @@ function search(req, res, next) {
               var item = items[i];
               var timestamp = item.post.created_on_epoch * 1000;
               results.push({
-                mediaurl: item.post.media.url_full,
-                storyurl: item.post.link,
-                message: cleanMessage(
+                mediaUrl: item.post.media.url_full,
+                posterUrl: null,
+                micropostUrl: item.post.link,
+                micropost: cleanMicropost(
                     item.post.title + '. ' + item.post.description),
-                user: item.user.url,
+                userProfileUrl: item.user.url,
                 type: item.post.media.type,
                 timestamp: timestamp,
-                published: getIsoDateString(timestamp)
+                publicationDate: getIsoDateString(timestamp),
+                socialInteractions: {
+                  likes: null,
+                  shares: null,
+                  comments: null,
+                  views: null
+                }
               });
             }
           }
@@ -1451,23 +1576,30 @@ function search(req, res, next) {
                 var group = this.group();
                 for (var i = 0, len = body.images.length; i < len; i++) {
                   var image = body.images[i];
-                  var user = 'http://twitpic.com/photos/' + image.user.username;
+                  var userProfileUrl = 'http://twitpic.com/photos/' + image.user.username;
                   var type = 'photo';
-                  var message = image.message;
+                  var micropost = image.micropost;
                   var timestamp = (new Date(image.timestamp)).getTime();
-                  var published = getIsoDateString(timestamp);
-                  var storyurl = 'http://twitpic.com/' + image.short_id;
+                  var publicationDate = getIsoDateString(timestamp);
+                  var micropostUrl = 'http://twitpic.com/' + image.short_id;
                   var cb = group();
-                  request.get(storyurl + '/full', function(err2, reply2, body2) {
-                    scrapeTwitPic(body2, function(mediaurl) {
+                  request.get(micropostUrl + '/full', function(err2, reply2, body2) {
+                    scrapeTwitPic(body2, function(mediaUrl) {
                       results.push({
-                        mediaurl: mediaurl,
-                        storyurl: storyurl,
-                        message: cleanMessage(message),
-                        user: user,
+                        mediaUrl: mediaUrl,
+                        posterUrl: null,
+                        micropostUrl: micropostUrl,
+                        micropost: cleanMicropost(micropost),
+                        userProfileUrl: userProfileUrl,
                         type: type,
                         timestamp: timestamp,
-                        published: published
+                        publicationDate: publicationDate,
+                        socialInteractions: {
+                          likes: null,
+                          shares: null,
+                          comments: null,
+                          views: null
+                        }
                       });
                       cb();
                     });
