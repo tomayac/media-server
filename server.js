@@ -1476,24 +1476,44 @@ function search(req, res, next) {
                                   mediaUrl = size.source;
                                 }
                               });
-                              results.push({
-                                mediaUrl: mediaUrl,
-                                posterUrl: null,
-                                micropostUrl: 'http://www.flickr.com/photos/' +
-                                    photo2.owner.nsid + '/' + photo2.id + '/',
-                                micropost: cleanMicropost(photo2.title._content +
-                                    '. ' + photo2.description._content +
-                                    tags.join(', ')),
-                                userProfileUrl: 'http://www.flickr.com/photos/' +
-                                    photo2.owner.nsid + '/',
-                                type: (videoSearch ? 'video' : 'photo'),
-                                timestamp: timestamp,
-                                publicationDate: getIsoDateString(timestamp),
-                                socialInteractions: {
-                                  likes: null,
-                                  shares: null,
-                                  comments: null,
-                                  views: null
+
+                              var params = {
+                                method: 'flickr.photos.getFavorites',
+                                api_key: GLOBAL_config.FLICKR_KEY,
+                                format: 'json',
+                                nojsoncallback: 1,
+                                photo_id: photo2.id
+                              };
+                              params = querystring.stringify(params);
+                              var options = {
+                                url: 'http://api.flickr.com/services/rest/?' + params,
+                                headers: GLOBAL_config.HEADERS
+                              };
+                              request.get(options, function(err, res2, body) {
+                                try {
+                                  body = JSON.parse(body);
+                                  results.push({
+                                    mediaUrl: mediaUrl,
+                                    posterUrl: null,
+                                    micropostUrl: 'http://www.flickr.com/photos/' +
+                                        photo2.owner.nsid + '/' + photo2.id + '/',
+                                    micropost: cleanMicropost(photo2.title._content +
+                                        '. ' + photo2.description._content +
+                                        tags.join(', ')),
+                                    userProfileUrl: 'http://www.flickr.com/photos/' +
+                                        photo2.owner.nsid + '/',
+                                    type: (videoSearch ? 'video' : 'photo'),
+                                    timestamp: timestamp,
+                                    publicationDate: getIsoDateString(timestamp),
+                                    socialInteractions: {
+                                      likes: parseInt(body.photo.total, 10),
+                                      shares: null,
+                                      comments: parseInt(photo2.comments._content, 10),
+                                      views: parseInt(photo2.views, 10)
+                                    }
+                                  });
+                                } catch(e) {
+                                  cb();
                                 }
                               });
                             }
