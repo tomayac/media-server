@@ -715,9 +715,9 @@ function search(req, res, next) {
                           timestamp: (new Date(item.published)).getTime(),
                           publicationDate: item.published,
                           socialInteractions: {
-                            likes: null,
-                            shares: null,
-                            comments: null,
+                            likes: item.object.plusoners.totalItems,
+                            shares: item.object.resharers.totalItems,
+                            comments: item.object.replies.totalItems,
                             views: null
                           }
                         });
