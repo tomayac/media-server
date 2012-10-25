@@ -248,7 +248,7 @@ function search(req, res, next) {
       cleanMicropost = cleanMicropost.replace(/[\n\r\t]/gi, ' ').replace(/\s+/g, ' ');
       return {
         html: micropost.trim(),
-        plaintext: cleanMicropost.trim()
+        plainText: cleanMicropost.trim()
       };
     }
   }
