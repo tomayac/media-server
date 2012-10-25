@@ -35,6 +35,7 @@ var GLOBAL_config = {
   NAMED_ENTITY_EXTRACTION: false,
   USE_GOOGLE_RESEARCH_API: false,
   MOBYPICTURE_KEY: 'TGoRMvQMAzWL2e9t',
+  FACEBOOK_KEY: 'AAAAAAITEghMBAMz6lXDYi9owyY5uvFHd4aWyRcbeHZCZC8VolTptgFYx6Wdqpi1SyaX5kA0JZCh6VO8qSgqMW9FkpnaRjA6jRVMFIr0XQZDZD',
   FLICKR_SECRET: 'a4a150addb7d59f1',
   FLICKR_KEY: 'b0f2a04baa5dd667fb181701408db162',
   YFROG_KEY: '89ABGHIX5300cc8f06b447103e19a201c7599962',
@@ -833,7 +834,9 @@ function search(req, res, next) {
       if (GLOBAL_config.DEBUG) console.log(currentService + ' *** ' + query);
       var params = {
         q: query,
-        limit: 100
+        limit: 100,
+        fields: 'comments,type,created_time,name,caption,description,source,picture,id,from,likes,shares',
+        access_token: GLOBAL_config.FACEBOOK_KEY
       };
       params = querystring.stringify(params);
       var options = {
@@ -881,9 +884,9 @@ function search(req, res, next) {
                         timestamp: timestamp,
                         publicationDate: getIsoDateString(timestamp),
                         socialInteractions: {
-                          likes: null,
-                          shares: null,
-                          comments: null,
+                          likes: item.likes ? item.likes.count : null,
+                          shares: item.shares ? item.shares.count : null,
+                          comments: item.comments ? item.comments.count : null,
                           views: null
                         }
                       });
