@@ -921,6 +921,8 @@ function search(req, res, next) {
         url: 'http://search.twitter.com/search.json?' + params,
         headers: GLOBAL_config.HEADERS
       };
+      // TODO: request each tweet's retweet_count via
+      // https://api.twitter.com/1/statuses/show.json?id=261414473397579776
       request.get(options, function(err, reply, body) {
         try {
           body = JSON.parse(body);
@@ -1290,9 +1292,9 @@ function search(req, res, next) {
                 timestamp: timestamp,
                 publicationDate: getIsoDateString(timestamp),
                 socialInteractions: {
-                  likes: null,
+                  likes: item.likes.count,
                   shares: null,
-                  comments: null,
+                  comments: item.comments.count,
                   views: null
                 }
               });
