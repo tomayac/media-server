@@ -1352,10 +1352,11 @@ function search(req, res, next) {
                       timestamp: timestamp,
                       publicationDate: getIsoDateString(timestamp),
                       socialInteractions: {
-                        likes: null,
+                        likes: parseInt(item.likeCount, 10) +
+                            parseInt(item.favoriteCount, 10),
                         shares: null,
-                        comments: null,
-                        views: null
+                        comments: item.commentCount,
+                        views: item.viewCount
                       }
                     });
                     cb(null);
