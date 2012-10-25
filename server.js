@@ -275,11 +275,20 @@ function search(req, res, next) {
    */
   function scrapeTwitPic(body, callback) {
     var mediaUrl = false;
+    var type = false;
     jsdom.env(body, function(errors, window) {
       var $ = window.document;
       try {
-        mediaUrl = $.getElementsByTagName('IMG')[1].src;
-        callback(mediaUrl);
+        if ($.getElementsByTagName('VIDEO').length > 0) {
+          mediaUrl = body.substring(body.indexOf('<source src="') +
+              ('<source src="'.length));
+          mediaUrl = mediaUrl.substring(0, mediaUrl.indexOf('"'));
+          type = 'video';
+        } else {
+          mediaUrl = $.getElementsByTagName('IMG')[1].src;
+          type = 'photo';
+        }
+        callback(mediaUrl, type);
       } catch(e) {
         if (body.indexOf('error') === -1) {
           throw('ERROR: TwitPic screen scraper broken');
@@ -1116,7 +1125,7 @@ function search(req, res, next) {
                         };
                         (function(micropost, userProfileUrl, timestamp, publicationDate) {
                           request.get(options, function(err, res, body) {
-                            scrapeTwitPic(body, function(mediaUrl) {
+                            scrapeTwitPic(body, function(mediaUrl, type) {
                               if (mediaUrl) {
                                 results.push({
                                   mediaUrl: mediaUrl,
@@ -1124,7 +1133,7 @@ function search(req, res, next) {
                                   micropostUrl: micropostUrl,
                                   micropost: micropost,
                                   userProfileUrl: userProfileUrl,
-                                  type: 'photo',
+                                  type: type,
                                   timestamp: timestamp,
                                   publicationDate: publicationDate,
                                   socialInteractions: {
@@ -1584,7 +1593,7 @@ function search(req, res, next) {
                   var micropostUrl = 'http://twitpic.com/' + image.short_id;
                   var cb = group();
                   request.get(micropostUrl + '/full', function(err2, reply2, body2) {
-                    scrapeTwitPic(body2, function(mediaUrl) {
+                    scrapeTwitPic(body2, function(mediaUrl, type) {
                       results.push({
                         mediaUrl: mediaUrl,
                         posterUrl: null,
