@@ -277,6 +277,9 @@ function search(req, res, next) {
   function scrapeTwitPic(body, callback) {
     var mediaUrl = false;
     var type = false;
+    if (!body) {
+      callback(false);
+    }
     jsdom.env(body, function(errors, window) {
       var $ = window.document;
       try {
@@ -304,6 +307,10 @@ function search(req, res, next) {
    */
   function scrapeImgLy(body, callback) {
     var mediaUrl = false;
+    if (!body) {
+      callback(false);
+    }
+
     jsdom.env(body, function(errors, window) {
       var $ = window.document;
       var match = 'the-image';
