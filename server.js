@@ -280,26 +280,30 @@ function search(req, res, next) {
     if (!body) {
       callback(false);
     }
-    jsdom.env(body, function(errors, window) {
-      var $ = window.document;
-      try {
-        if ($.getElementsByTagName('VIDEO').length > 0) {
-          mediaUrl = body.substring(body.indexOf('<source src="') +
-              ('<source src="'.length));
-          mediaUrl = mediaUrl.substring(0, mediaUrl.indexOf('"'));
-          type = 'video';
-        } else {
-          mediaUrl = $.getElementsByTagName('IMG')[1].src;
-          type = 'photo';
+    try {
+      jsdom.env(body, function(errors, window) {
+        var $ = window.document;
+        try {
+          if ($.getElementsByTagName('VIDEO').length > 0) {
+            mediaUrl = body.substring(body.indexOf('<source src="') +
+                ('<source src="'.length));
+            mediaUrl = mediaUrl.substring(0, mediaUrl.indexOf('"'));
+            type = 'video';
+          } else {
+            mediaUrl = $.getElementsByTagName('IMG')[1].src;
+            type = 'photo';
+          }
+          callback(mediaUrl, type);
+        } catch(e) {
+          if (body.indexOf('error') === -1) {
+            throw('ERROR: TwitPic screen scraper broken');
+          }
+          callback(false);
         }
-        callback(mediaUrl, type);
-      } catch(e) {
-        if (body.indexOf('error') === -1) {
-          throw('ERROR: TwitPic screen scraper broken');
-        }
-        callback(false);
-      }
-    });
+      });
+    } catch(e) {
+      callback(false);
+    }
   }
 
   /**
@@ -310,18 +314,21 @@ function search(req, res, next) {
     if (!body) {
       callback(false);
     }
-
-    jsdom.env(body, function(errors, window) {
-      var $ = window.document;
-      var match = 'the-image';
-      try {
-        mediaUrl = $.getElementById(match).src;
-        callback(mediaUrl);
-      } catch(e) {
-        throw('ERROR: img.ly screen scraper broken');
-        callback(false);
-      }
-    });
+    try {
+      jsdom.env(body, function(errors, window) {
+        var $ = window.document;
+        var match = 'the-image';
+        try {
+          mediaUrl = $.getElementById(match).src;
+          callback(mediaUrl);
+        } catch(e) {
+          throw('ERROR: img.ly screen scraper broken');
+          callback(false);
+        }
+      });
+    } catch(e) {
+      callback(false);
+    }
   }
 
   /**
@@ -336,31 +343,38 @@ function search(req, res, next) {
         timestamp: false
       });
     }
-    jsdom.env(body, function(errors, window) {
-      var $ = window.document;
-      try {
-        caption = $.getElementById('photoCaption').textContent;
-        body =
-            $.getElementsByTagName('body')[0].textContent.replace(/\s+/g, ' ');
-        var match = '"unixTime":';
-        var timeStart = (body.indexOf(match) + match.length);
-        var timeEnd = body.substring(timeStart).indexOf(',') + timeStart;
-        timestamp = parseInt(body.substring(timeStart, timeEnd) + '000', 10);
-        callback({
-          caption: caption,
-          timestamp: timestamp
-        });
-      } catch(e) {
-        // private profiles are not the fault of the scraper, everything else is
-        if (body.indexOf('Sorry, ') === -1) {
-          throw('ERROR: MySpace screen scraper broken');
+    try {
+      jsdom.env(body, function(errors, window) {
+        var $ = window.document;
+        try {
+          caption = $.getElementById('photoCaption').textContent;
+          body =
+              $.getElementsByTagName('body')[0].textContent.replace(/\s+/g, ' ');
+          var match = '"unixTime":';
+          var timeStart = (body.indexOf(match) + match.length);
+          var timeEnd = body.substring(timeStart).indexOf(',') + timeStart;
+          timestamp = parseInt(body.substring(timeStart, timeEnd) + '000', 10);
+          callback({
+            caption: caption,
+            timestamp: timestamp
+          });
+        } catch(e) {
+          // private profiles are not the fault of the scraper, everything else is
+          if (body.indexOf('Sorry, ') === -1) {
+            throw('ERROR: MySpace screen scraper broken');
+          }
+          callback({
+            caption: false,
+            timestamp: false
+          });
         }
-        callback({
-          caption: false,
-          timestamp: false
-        });
-      }
-    });
+      });
+    } catch(e) {
+      callback({
+        caption: false,
+        timestamp: false
+      });
+    }
   }
 
   /**
@@ -1671,35 +1685,38 @@ function search(req, res, next) {
               function() {
                 var group = this.group();
                 for (var i = 0, len = body.images.length; i < len; i++) {
-                  var image = body.images[i];
-                  var userProfileUrl = 'http://twitpic.com/photos/' + image.user.username;
-                  var type = 'photo';
-                  var micropost = image.micropost;
-                  var timestamp = (new Date(image.timestamp)).getTime();
-                  var publicationDate = getIsoDateString(timestamp);
-                  var micropostUrl = 'http://twitpic.com/' + image.short_id;
-                  var cb = group();
-                  request.get(micropostUrl + '/full', function(err2, reply2, body2) {
-                    scrapeTwitPic(body2, function(mediaUrl, type) {
-                      results.push({
-                        mediaUrl: mediaUrl,
-                        posterUrl: null,
-                        micropostUrl: micropostUrl,
-                        micropost: cleanMicropost(micropost),
-                        userProfileUrl: userProfileUrl,
-                        type: type,
-                        timestamp: timestamp,
-                        publicationDate: publicationDate,
-                        socialInteractions: {
-                          likes: null,
-                          shares: null,
-                          comments: null,
-                          views: null
-                        }
+                  (function(image) {
+                    var userProfileUrl = 'http://twitpic.com/photos/' + image.user.username;
+                    var type = 'photo';
+                    var micropost = image.message;
+                    var timestamp = (new Date(image.timestamp)).getTime();
+                    var publicationDate = getIsoDateString(timestamp);
+                    var micropostUrl = 'http://twitpic.com/' + image.short_id;
+                    var views = parseInt(image.views, 10);
+                    var comments = parseInt(image.number_of_comments, 10);
+                    var cb = group();
+                    request.get(micropostUrl + '/full', function(err2, reply2, body2) {
+                      scrapeTwitPic(body2, function(mediaUrl, type) {
+                        results.push({
+                          mediaUrl: mediaUrl,
+                          posterUrl: null,
+                          micropostUrl: micropostUrl,
+                          micropost: cleanMicropost(micropost),
+                          userProfileUrl: userProfileUrl,
+                          type: type,
+                          timestamp: timestamp,
+                          publicationDate: publicationDate,
+                          socialInteractions: {
+                            likes: null,
+                            shares: null,
+                            comments: comments,
+                            views: views
+                          }
+                        });
+                        cb();
                       });
-                      cb();
                     });
-                  });
+                  })(body.images[i]);
                 }
               },
               function() {
