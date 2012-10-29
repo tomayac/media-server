@@ -1562,35 +1562,89 @@ function search(req, res, next) {
         url: 'http://api.mobypicture.com/?' + params,
         headers: GLOBAL_config.HEADERS
       };
-      request.get(options, function(err, reply, body) {
+      request.get(options, function(err, reply, body1) {
         var results = [];
         try {
-          body = JSON.parse(body);
-          if ((body.results) && (body.results.length)) {
-            var items = body.results;
-            for (var i = 0, len = items.length; i < len; i++) {
-              var item = items[i];
-              var timestamp = item.post.created_on_epoch * 1000;
-              results.push({
-                mediaUrl: item.post.media.url_full,
-                posterUrl: null,
-                micropostUrl: item.post.link,
-                micropost: cleanMicropost(
-                    item.post.title + '. ' + item.post.description),
-                userProfileUrl: item.user.url,
-                type: item.post.media.type,
-                timestamp: timestamp,
-                publicationDate: getIsoDateString(timestamp),
-                socialInteractions: {
-                  likes: null,
-                  shares: null,
-                  comments: null,
-                  views: null
+          body1 = JSON.parse(body1);
+          if ((body1.results) && (body1.results.length)) {
+            var items = body1.results;
+            Step(
+              function() {
+                var group = this.group();
+                for (var i = 0, len = items.length; i < len; i++) {
+                  var cb = group();
+                  var item = items[i];
+                  params = {
+                    key: GLOBAL_config.MOBYPICTURE_KEY,
+                    action: 'getMediaInfo',
+                    format: 'json',
+                    tinyurl_code: item.post.link_tiny
+                  };
+                  params = querystring.stringify(params);
+                  options = {
+                    url: 'http://api.mobypicture.com/?' + params,
+                    headers: GLOBAL_config.HEADERS
+                  };
+                  request.get(options, function(err, reply, body2) {
+                    try {
+                      body2 = JSON.parse(body2);
+                      var mediaUrl = body2.post.media.url_full;
+                      var micropostUrl = body2.post.link;
+                      var timestamp = body2.post.created_on_epoch * 1000;
+                      var micropost = body2.post.title + '. ' + item.post.description;
+                      var userProfileUrl = body2.user.url;
+                      var type = body2.post.media.type;
+                      var views = parseInt(body2.post.views, 10);
+                      var comments = parseInt(body2.post.comments, 10);
+                      params = {
+                        key: GLOBAL_config.MOBYPICTURE_KEY,
+                        action: 'getLikes',
+                        format: 'json',
+                        tinyurl_code: body2.post.link_tiny
+                      };
+                      params = querystring.stringify(params);
+                      options = {
+                        url: 'http://api.mobypicture.com/?' + params,
+                        headers: GLOBAL_config.HEADERS
+                      };
+                      request.get(options, function(err, reply, body3) {
+                        try {
+                          body3 = JSON.parse(body3);
+                          results.push({
+                            mediaUrl: mediaUrl,
+                            posterUrl: null,
+                            micropostUrl: micropostUrl,
+                            micropost: cleanMicropost(
+                                micropost),
+                            userProfileUrl: userProfileUrl,
+                            type: type,
+                            timestamp: timestamp,
+                            publicationDate: getIsoDateString(timestamp),
+                            socialInteractions: {
+                              likes: parseInt(body3.votes, 10),
+                              shares: null,
+                              comments: comments,
+                              views: views
+                            }
+                          });
+                          cb();
+                        } catch(e) {
+                          cb();
+                        }
+                      });
+                    } catch(e) {
+                      cb();
+                    }
+                  });
                 }
-              });
-            }
+              },
+              function() {
+                collectResults(results, currentService, pendingRequests);
+              }
+            );
+          } else {
+            collectResults(results, currentService, pendingRequests);
           }
-          collectResults(results, currentService, pendingRequests);
         } catch(e) {
           collectResults(results, currentService, pendingRequests);
         }
