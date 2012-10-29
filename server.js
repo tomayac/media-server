@@ -35,7 +35,6 @@ var GLOBAL_config = {
   NAMED_ENTITY_EXTRACTION: false,
   USE_GOOGLE_RESEARCH_API: false,
   MOBYPICTURE_KEY: 'TGoRMvQMAzWL2e9t',
-  FACEBOOK_KEY: 'AAAAAAITEghMBAMz6lXDYi9owyY5uvFHd4aWyRcbeHZCZC8VolTptgFYx6Wdqpi1SyaX5kA0JZCh6VO8qSgqMW9FkpnaRjA6jRVMFIr0XQZDZD',
   FLICKR_SECRET: 'a4a150addb7d59f1',
   FLICKR_KEY: 'b0f2a04baa5dd667fb181701408db162',
   YFROG_KEY: '89ABGHIX5300cc8f06b447103e19a201c7599962',
@@ -691,6 +690,7 @@ function search(req, res, next) {
             '&orderBy=recent&key=' + GLOBAL_config.GOOGLE_KEY,
         headers: GLOBAL_config.HEADERS
       };
+      if (GLOBAL_config.DEBUG) console.log(currentService + ' ' + options.url);
       request.get(options, function(err, reply, body) {
         var results = [];
         try {
@@ -771,6 +771,7 @@ function search(req, res, next) {
         url: 'http://api.myspace.com/opensearch/images?' + params,
         headers: GLOBAL_config.HEADERS
       };
+      if (GLOBAL_config.DEBUG) console.log(currentService + ' ' + options.url);
       request.get(options, function(err, reply, body) {
         var results = [];
         // when no results are found, the MySpace API returns 404
@@ -845,6 +846,7 @@ function search(req, res, next) {
         url: 'http://api.myspace.com/opensearch/videos?' + params,
         headers: GLOBAL_config.HEADERS
       };
+      if (GLOBAL_config.DEBUG) console.log(currentService + ' ' + options.url);
       request.get(options, function(err, reply, body) {
         res.send(body);
       });
@@ -856,14 +858,14 @@ function search(req, res, next) {
       var params = {
         q: query,
         limit: 100,
-        fields: 'comments,type,created_time,name,caption,description,source,picture,id,from,likes,shares',
-        access_token: GLOBAL_config.FACEBOOK_KEY
+        fields: 'comments,type,created_time,name,caption,description,source,picture,id,from,likes,shares'
       };
       params = querystring.stringify(params);
       var options = {
         url: 'https://graph.facebook.com/search?' + params + '&type=post',
         headers: GLOBAL_config.HEADERS
       };
+      if (GLOBAL_config.DEBUG) console.log(currentService + ' ' + options.url);
       request.get(options, function(err, reply, body) {
         try {
           body = JSON.parse(body);
@@ -942,6 +944,7 @@ function search(req, res, next) {
         url: 'http://search.twitter.com/search.json?' + params,
         headers: GLOBAL_config.HEADERS
       };
+      if (GLOBAL_config.DEBUG) console.log(currentService + ' ' + options.url);
       // TODO: request each tweet's retweet_count via
       // https://api.twitter.com/1/statuses/show.json?id=261414473397579776
       request.get(options, function(err, reply, body) {
@@ -1004,6 +1007,7 @@ function search(req, res, next) {
         url: 'http://search.twitter.com/search.json?' + params,
         headers: GLOBAL_config.HEADERS
       };
+      if (GLOBAL_config.DEBUG) console.log(currentService + ' ' + options.url);
       request.get(options, function(err, reply, body) {
         try {
           body = JSON.parse(body);
@@ -1288,6 +1292,7 @@ function search(req, res, next) {
             '/media/recent?' + params,
         headers: GLOBAL_config.HEADERS
       };
+      if (GLOBAL_config.DEBUG) console.log(currentService + ' ' + options.url);
       request.get(options, function(err, reply, body) {
         try {
           body = JSON.parse(body);
@@ -1345,6 +1350,7 @@ function search(req, res, next) {
         url: 'http://gdata.youtube.com/feeds/api/videos?' + params,
         headers: GLOBAL_config.HEADERS
       };
+      if (GLOBAL_config.DEBUG) console.log(currentService + ' ' + options.url);
       request.get(options, function(err, reply, body) {
         try {
           body = JSON.parse(body);
@@ -1419,6 +1425,7 @@ function search(req, res, next) {
         url: 'http://api.flickr.com/services/rest/?' + params,
         headers: GLOBAL_config.HEADERS
       };
+      if (GLOBAL_config.DEBUG) console.log(currentService + ' ' + options.url);
       request.get(options, function(err, reply, body) {
         try {
           body = JSON.parse(body);
@@ -1576,6 +1583,7 @@ function search(req, res, next) {
         url: 'http://api.mobypicture.com/?' + params,
         headers: GLOBAL_config.HEADERS
       };
+      if (GLOBAL_config.DEBUG) console.log(currentService + ' ' + options.url);
       request.get(options, function(err, reply, body1) {
         var results = [];
         try {
@@ -1676,6 +1684,7 @@ function search(req, res, next) {
         url: 'http://api.twitpic.com/2/tags/show.json?' + params,
         headers: headers
       };
+      if (GLOBAL_config.DEBUG) console.log(currentService + ' ' + options.url);
       request.get(options, function(err, reply, body) {
         var results = [];
         try {
