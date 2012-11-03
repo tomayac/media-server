@@ -254,23 +254,6 @@ function search(req, res, next) {
   }
 
   /**
-   * Scrapes Yfrog
-   */
-  function scrapeYfrog(body) {
-    try {
-      var scraperTag1 = '<image_link>';
-      var scraperTag2 = '</image_link>';
-      var scraperTagLength = scraperTag1.length;
-      var start = body.indexOf(scraperTag1) + scraperTagLength;
-      var end = body.indexOf(scraperTag2);
-      return body.substring(start, end);
-    } catch(e) {
-      throw('ERROR: Yfrog screen scraper broken');
-      return false;
-    }
-  }
-
-  /**
    * Scrapes TwitPic
    */
   function scrapeTwitPic(body, callback) {
@@ -697,8 +680,8 @@ function search(req, res, next) {
           body = JSON.parse(body);
           if (body.items && Array.isArray(body.items)) {
             body.items.forEach(function(item) {
-              // only treat posts and shares, no check-ins
-              if (((item.verb === 'share') || (item.verb === 'post')) &&
+              // only treat posts, notes, and shares, no check-ins
+              if (((item.verb === 'share') || (item.verb === 'post') || (item.verb === 'note')) &&
                   (item.object.attachments) &&
                   (Array.isArray(item.object.attachments))) {
                 item.object.attachments.forEach(function(attachment) {
@@ -722,14 +705,14 @@ function search(req, res, next) {
                     var mediaUrl = '';
                     if (attachment.embed) {
                       mediaUrl = attachment.embed.url;
-                    } else if (attachment.image) {
-                      mediaUrl = attachment.image.url;
+                    } else if (attachment.fullImage) {
+                      mediaUrl = attachment.fullImage.url;
                     }
                     cleanVideoUrl(mediaUrl, function(cleanedMediaUrl) {
                       if (cleanedMediaUrl) {
                         results.push({
                           mediaUrl: cleanedMediaUrl,
-                          posterUrl: null,
+                          posterUrl: attachment.image.url,
                           micropostUrl: item.url,
                           micropost: micropost,
                           userProfileUrl: item.actor.url,
@@ -895,7 +878,7 @@ function search(req, res, next) {
                     if (cleanedMediaUrl) {
                       results.push({
                         mediaUrl: cleanedMediaUrl.replace(/s\.jpg$/gi, 'n.jpg'),
-                        posterUrl: null,
+                        posterUrl: item.picture,
                         micropostUrl:
                             'https://www.facebook.com/permalink.php?story_fbid=' +
                             item.id.split(/_/)[1] + '&id=' + item.from.id,
@@ -972,7 +955,7 @@ function search(req, res, next) {
                   item.from_user + '/status/' + item.id_str;
               results.push({
                 mediaUrl: mediaUrl,
-                posterUrl: null,
+                posterUrl: mediaUrl + ':thumb',
                 micropostUrl: micropostUrl,
                 micropost: micropost,
                 userProfileUrl: userProfileUrl,
@@ -1121,11 +1104,10 @@ function search(req, res, next) {
                         };
                         (function(micropost, userProfileUrl, timestamp, publicationDate) {
                           request.get(options, function(err, result, body) {
-                            mediaUrl = scrapeYfrog(body);
                             if (mediaUrl) {
                               results.push({
-                                mediaUrl: mediaUrl,
-                                posterUrl: null,
+                                mediaUrl: mediaUrl + ':iphone',
+                                posterUrl: mediaUrl + ':small',
                                 micropostUrl: micropostUrl,
                                 micropost: micropost,
                                 userProfileUrl: userProfileUrl,
@@ -1159,7 +1141,7 @@ function search(req, res, next) {
                               if (mediaUrl) {
                                 results.push({
                                   mediaUrl: mediaUrl,
-                                  posterUrl: null,
+                                  posterUrl: mediaUrl,
                                   micropostUrl: micropostUrl,
                                   micropost: micropost,
                                   userProfileUrl: userProfileUrl,
@@ -1194,7 +1176,7 @@ function search(req, res, next) {
                               if (mediaUrl) {
                                 results.push({
                                   mediaUrl: mediaUrl,
-                                  posterUrl: null,
+                                  posterUrl: mediaUrl,
                                   micropostUrl: micropostUrl,
                                   micropost: micropost,
                                   userProfileUrl: userProfileUrl,
@@ -1234,7 +1216,7 @@ function search(req, res, next) {
                                 results.push({
                                   mediaUrl:
                                       body.data.images.standard_resolution.url,
-                                  posterUrl: null,
+                                  posterUrl: body.data.images.thumbnail.url,
                                   micropostUrl: micropostUrl,
                                   micropost: micropost,
                                   userProfileUrl: userProfileUrl,
@@ -1310,7 +1292,7 @@ function search(req, res, next) {
                       item.tags.join(', ') : '');
               results.push({
                 mediaUrl: item.images.standard_resolution.url,
-                posterUrl: null,
+                posterUrl: item.images.thumbnail.url,
                 micropostUrl: item.link,
                 micropost: cleanMicropost(micropost),
                 userProfileUrl: 'https://api.instagram.com/v1/users/' + item.user.id,
@@ -1370,7 +1352,7 @@ function search(req, res, next) {
                   cleanVideoUrl(url, function(cleanedVideoUrl) {
                     results.push({
                       mediaUrl: cleanedVideoUrl,
-                      posterUrl: null,
+                      posterUrl: item.thumbnail.sqDefault,//ficken
                       micropostUrl: url,
                       micropost: cleanMicropost(
                           item.title + '. ' + item.description),
@@ -1483,9 +1465,11 @@ function search(req, res, next) {
                             if ((body.sizes) && (body.sizes.size) &&
                                 (Array.isArray(body.sizes.size))) {
                               var mediaUrl = false;
+                              var posterUrl = false;
                               body.sizes.size.forEach(function(size) {
                                 // take the picture in the best-possible
-                                // resolution
+                                // resolution, the highest resolution (unknown)
+                                // is always the last in the sizes array
                                 if ((!videoSearch) &&
                                     ((size.label === 'Original') ||
                                      (size.label === 'Large') ||
@@ -1496,6 +1480,9 @@ function search(req, res, next) {
                                      (size.label === 'Thumbnail') ||
                                      (size.label === 'Square'))) {
                                   mediaUrl = size.source;
+                                }
+                                if (size.label === 'Thumbnail') {
+                                  posterUrl = size.source;
                                 }
                                 // take the video in the best-possible quality
                                 if ((videoSearch) &&
@@ -1522,7 +1509,7 @@ function search(req, res, next) {
                                   body = JSON.parse(body);
                                   results.push({
                                     mediaUrl: mediaUrl,
-                                    posterUrl: null,
+                                    posterUrl: posterUrl,
                                     micropostUrl: 'http://www.flickr.com/photos/' +
                                         photo2.owner.nsid + '/' + photo2.id + '/',
                                     micropost: cleanMicropost(photo2.title._content +
@@ -1611,6 +1598,7 @@ function search(req, res, next) {
                     try {
                       body2 = JSON.parse(body2);
                       var mediaUrl = body2.post.media.url_full;
+                      var posterUrl = body2.post.media.url_thumbnail;
                       var micropostUrl = body2.post.link;
                       var timestamp = body2.post.created_on_epoch * 1000;
                       var micropost = body2.post.title + '. ' + item.post.description;
@@ -1634,7 +1622,7 @@ function search(req, res, next) {
                           body3 = JSON.parse(body3);
                           results.push({
                             mediaUrl: mediaUrl,
-                            posterUrl: null,
+                            posterUrl: posterUrl,
                             micropostUrl: micropostUrl,
                             micropost: cleanMicropost(
                                 micropost),
@@ -1708,7 +1696,7 @@ function search(req, res, next) {
                       scrapeTwitPic(body2, function(mediaUrl, type) {
                         results.push({
                           mediaUrl: mediaUrl,
-                          posterUrl: null,
+                          posterUrl: 'http://twitpic.com/show/thumb/' + micropostUrl.replace('http://twitpic.com/', ''),
                           micropostUrl: micropostUrl,
                           micropost: cleanMicropost(micropost),
                           userProfileUrl: userProfileUrl,
