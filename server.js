@@ -928,53 +928,78 @@ function search(req, res, next) {
         headers: GLOBAL_config.HEADERS
       };
       if (GLOBAL_config.DEBUG) console.log(currentService + ' ' + options.url);
-      // TODO: request each tweet's retweet_count via
-      // https://api.twitter.com/1/statuses/show.json?id=261414473397579776
       request.get(options, function(err, reply, body) {
         try {
           body = JSON.parse(body);
           var results = [];
           if ((body.results) && (body.results.length)) {
             var items = body.results;
-            for (var i = 0, len = items.length; i < len; i++) {
-              var item = items[i];
-              var mediaUrl = '';
-              if (item.entities && item.entities.media &&
-                  item.entities.media.length > 0) {
-                mediaUrl = item.entities.media[0]['media_url'] ?
-                    item.entities.media[0]['media_url'] :
-                    item.entities.media[0]['media_url_https'];
-              } else {
-                continue;
-              }
-              var timestamp = Date.parse(item.created_at);
-              var publicationDate = getIsoDateString(timestamp)
-              var micropost = cleanMicropost(item.text);
-              var userProfileUrl = 'http://twitter.com/' + item.from_user;
-              var micropostUrl = 'http://twitter.com/' +
-                  item.from_user + '/status/' + item.id_str;
-              results.push({
-                mediaUrl: mediaUrl,
-                posterUrl: mediaUrl + ':thumb',
-                micropostUrl: micropostUrl,
-                micropost: micropost,
-                userProfileUrl: userProfileUrl,
-                type: 'photo',
-                timestamp: timestamp,
-                publicationDate: publicationDate,
-                socialInteractions: {
-                  likes: null,
-                  shares: null,
-                  comments: null,
-                  views: null
+            Step(
+              function() {
+                var group = this.group();
+                for (var i = 0, len = items.length; i < len; i++) {
+                  var cb = group();
+                  (function(item) {
+                  var mediaUrl = '';
+                  if (item.entities && item.entities.media &&
+                      item.entities.media.length > 0) {
+                    mediaUrl = item.entities.media[0]['media_url'] ?
+                        item.entities.media[0]['media_url'] :
+                        item.entities.media[0]['media_url_https'];
+                    params = {
+                      id: item.id_str,
+                      trim_user: true
+                    };
+                    var params = querystring.stringify(params);
+                    var options = {
+                      url: 'https://api.twitter.com/1/statuses/show.json?' + params,
+                      headers: GLOBAL_config.HEADERS
+                    };
+                    request.get(options, function(err, reply, body2) {
+                      try {
+                        body2 = JSON.parse(body2);
+                        var timestamp = Date.parse(item.created_at);
+                        var publicationDate = getIsoDateString(timestamp)
+                        var micropost = cleanMicropost(item.text);
+                        var userProfileUrl = 'http://twitter.com/' + item.from_user;
+                        var micropostUrl = 'http://twitter.com/' +
+                            item.from_user + '/status/' + item.id_str;
+                        results.push({
+                          mediaUrl: mediaUrl,
+                          posterUrl: mediaUrl + ':thumb',
+                          micropostUrl: micropostUrl,
+                          micropost: micropost,
+                          userProfileUrl: userProfileUrl,
+                          type: 'photo',
+                          timestamp: timestamp,
+                          publicationDate: publicationDate,
+                          socialInteractions: {
+                            likes: null,
+                            shares: body2.retweet_count ? body2.retweet_count : 0,
+                            comments: null,
+                            views: null
+                          }
+                        });
+                        cb();
+                      } catch(e) {
+                        cb();
+                      }
+                    });
+                  } else {
+                    cb();
+                  }
+                  })(items[i]);
                 }
-              });
-            }
+              },
+              function() {
+                collectResults(results, currentService, pendingRequests);
+              }
+            );
           }
         } catch(e) {
           collectResults([], currentService, pendingRequests);
         }
-        collectResults(results, currentService, pendingRequests);
+        //collectResults(results, currentService, pendingRequests);
       });
     },
     Twitter: function(pendingRequests) {
@@ -1352,7 +1377,7 @@ function search(req, res, next) {
                   cleanVideoUrl(url, function(cleanedVideoUrl) {
                     results.push({
                       mediaUrl: cleanedVideoUrl,
-                      posterUrl: item.thumbnail.sqDefault,//ficken
+                      posterUrl: item.thumbnail.sqDefault,
                       micropostUrl: url,
                       micropost: cleanMicropost(
                           item.title + '. ' + item.description),
