@@ -999,7 +999,6 @@ function search(req, res, next) {
         } catch(e) {
           collectResults([], currentService, pendingRequests);
         }
-        //collectResults(results, currentService, pendingRequests);
       });
     },
     Twitter: function(pendingRequests) {
