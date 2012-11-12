@@ -225,7 +225,7 @@ var mediaFinder = {
         cleanedMicropost = cleanedMicropost.replace(/[\n\r\t]/gi, ' ').replace(/\s+/g, ' ');
         return {
           html: micropost.trim(),
-          plainText: cleanMicropost.trim()
+          plainText: cleanedMicropost.trim()
         };
       }
     }
