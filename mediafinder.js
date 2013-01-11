@@ -226,6 +226,11 @@ var mediaFinder = {
           html: micropost.trim(),
           plainText: cleanedMicropost.trim()
         };
+      } else {
+        return {
+          html: '',
+          plainText: ''
+        };
       }
     }
 
@@ -285,8 +290,7 @@ var mediaFinder = {
               callback(false);
             }
           } catch(e) {
-            //throw('ERROR: img.ly screen scraper broken');
-            throw(e);
+            throw('ERROR: img.ly screen scraper broken');
           }
         });
       } catch(e) {
