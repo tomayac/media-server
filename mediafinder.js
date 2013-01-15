@@ -1520,7 +1520,6 @@ var mediaFinder = {
                                     mediaUrl = size.source;
                                   }
                                 });
-
                                 var params = {
                                   method: 'flickr.photos.getFavorites',
                                   api_key: GLOBAL_config.FLICKR_KEY,
@@ -1556,12 +1555,12 @@ var mediaFinder = {
                                         views: parseInt(photo2.views, 10)
                                       }
                                     });
+                                    cb();
                                   } catch(e) {
                                     cb();
                                   }
                                 });
                               }
-                              cb();
                             } catch(e) {
                               cb();
                             }
