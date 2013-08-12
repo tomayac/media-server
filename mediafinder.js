@@ -376,52 +376,6 @@ var mediaFinder = {
     }
 
     /**
-     * Scrapes MySpace
-     */
-    function scrapeMySpace(body, callback) {
-      var caption = false;
-      var timestamp = false;
-      if (!body) {
-        callback({
-          caption: false,
-          timestamp: false
-        });
-      }
-      try {
-        jsdom.env(body, function(errors, window) {
-          var $ = window.document;
-          try {
-            caption = $.getElementById('photoCaption').textContent;
-            body =
-                $.getElementsByTagName('body')[0].textContent.replace(/\s+/g, ' ');
-            var match = '"unixTime":';
-            var timeStart = (body.indexOf(match) + match.length);
-            var timeEnd = body.substring(timeStart).indexOf(',') + timeStart;
-            timestamp = parseInt(body.substring(timeStart, timeEnd) + '000', 10);
-            callback({
-              caption: caption,
-              timestamp: timestamp
-            });
-          } catch(e) {
-            // private profiles are not the fault of the scraper, everything else is
-            if (body.indexOf('Sorry, ') === -1) {
-              throw('ERROR: MySpace screen scraper broken');
-            }
-            callback({
-              caption: false,
-              timestamp: false
-            });
-          }
-        });
-      } catch(e) {
-        callback({
-          caption: false,
-          timestamp: false
-        });
-      }
-    }
-
-    /**
      * Annotates microposts with DBpedia Spotlight
      */
     function spotlight(json) {
@@ -792,100 +746,6 @@ var mediaFinder = {
           }
         });
       },
-      MySpace: function(pendingRequests) {
-        var currentService = 'MySpace';
-        if (GLOBAL_config.DEBUG) console.log(currentService + ' *** ' + query);
-        var params = {
-          searchTerms: query,
-          count: 10,
-          sortBy: 'recent'
-        };
-        params = querystring.stringify(params);
-        var options = {
-          url: 'http://api.myspace.com/opensearch/images?' + params,
-          headers: GLOBAL_config.HEADERS
-        };
-        if (GLOBAL_config.DEBUG) console.log(currentService + ' ' + options.url);
-        request.get(options, function(err, reply, body) {
-          var results = [];
-          // when no results are found, the MySpace API returns 404
-          if (reply.statusCode === 404) {
-            collectResults(results, currentService, pendingRequests);
-            return;
-          }
-          try {
-            body = JSON.parse(body);
-            if (body.entry && Array.isArray(body.entry)) {
-              var items = body.entry;
-              Step(
-                function() {
-                  var group = this.group();
-                  items.forEach(function(item) {
-                    var cb = group();
-                    var userProfileUrl = item.profileUrl;
-                    var micropostUrl = userProfileUrl + '/photos/' + item.imageId;
-                    var mediaUrl = item.thumbnailUrl.replace(/m\.jpg$/, 'l.jpg');
-                    var options = {
-                      url: micropostUrl,
-                      headers: GLOBAL_config.HEADERS
-                    };
-                    request.get(options, function(err, reply, body) {
-                      scrapeMySpace(body, function(scrapeResult) {
-                        if (scrapeResult.timestamp && scrapeResult.caption) {
-                          results.push({
-                            mediaUrl: mediaUrl,
-                            posterUrl: null,
-                            micropostUrl: micropostUrl,
-                            micropost: cleanMicropost(scrapeResult.caption),
-                            userProfileUrl: userProfileUrl,
-                            type: 'photo',
-                            timestamp: scrapeResult.timestamp,
-                            publicationDate: getIsoDateString(scrapeResult.timestamp),
-                            socialInteractions: {
-                              likes: null,
-                              shares: null,
-                              comments: null,
-                              views: null
-                            }
-                          });
-                        }
-                        cb(null);
-                      });
-                    });
-                  });
-                },
-                function(err) {
-                  collectResults(results, currentService, pendingRequests);
-                }
-              );
-            } else {
-              collectResults(results, currentService, pendingRequests);
-            }
-          } catch(e) {
-            collectResults(results, currentService, pendingRequests);
-          }
-        });
-      },
-      /*
-      MySpaceVideos: function(pendingRequests) {
-        var currentService = 'MySpaceVideos';
-        if (GLOBAL_config.DEBUG) console.log(currentService + ' *** ' + query);
-        var params = {
-          searchTerms: query,
-          count: 10,
-          sortBy: 'recent'
-        };
-        params = querystring.stringify(params);
-        var options = {
-          url: 'http://api.myspace.com/opensearch/videos?' + params,
-          headers: GLOBAL_config.HEADERS
-        };
-        if (GLOBAL_config.DEBUG) console.log(currentService + ' ' + options.url);
-        request.get(options, function(err, reply, body) {
-          res.send(body);
-        });
-      },
-      */
       Facebook: function(pendingRequests) {
         var currentService = 'Facebook';
         if (GLOBAL_config.DEBUG) console.log(currentService + ' *** ' + query);
@@ -1845,16 +1705,23 @@ var mediaFinder = {
           }
         });
       },
-      Lockerz: function(pendingRequests) {
-        var currentService = 'Lockerz';
+      WikimediaCommons: function(pendingRequests) {
+        var currentService = 'WikimediaCommons';
         if (GLOBAL_config.DEBUG) console.log(currentService + ' *** ' + query);
         var params = {
-          search: query
+          action: 'query',
+          generator: 'search',
+          gsrnamespace: 6,
+          gsrsearch: query,
+          gsrlimit: 500,
+          prop: 'imageinfo|globalusage',
+          iiprop: 'url|timestamp|user',
+          format: 'json'
         };
         params = querystring.stringify(params);
         var headers = GLOBAL_config.HEADERS;
         var options = {
-          url: 'http://api.plixi.com/api/tpapi.svc/json/photos?' + params,
+          url: 'https://commons.wikimedia.org/w/api.php?' + params,
           headers: headers
         };
         if (GLOBAL_config.DEBUG) console.log(currentService + ' ' + options.url);
@@ -1862,27 +1729,41 @@ var mediaFinder = {
           var results = [];
           try {
             body = JSON.parse(body);
-            if (body.List) {
-              body.List.forEach(function(item) {
+            if (body && body.query && body.query.pages) {
+              for (var pageId in body.query.pages) {
+                var page = body.query.pages[pageId];
+                var title = page.title.replace('File:', '');
+                var posterUrl = page.imageinfo[0].url.replace(
+                    'https://upload.wikimedia.org/wikipedia/commons/',
+                    'https://upload.wikimedia.org/wikipedia/commons/thumb/') +
+                    '/500px-' + encodeURIComponent(title.replace(/\s/g, '_'));
                 results.push({
-                  mediaUrl: item.BigImageUrl,
-                  posterUrl: item.ThumbnailUrl,
-                  micropostUrl: 'http://lockerz.com/s/' + item.TinyAlias,
-                  micropost: cleanMicropost(item.Message),
-                  userProfileUrl: 'http://pics.lockerz.com/gallery/' + item.UserId,
+                  mediaUrl: page.imageinfo[0].url,
+                  posterUrl: posterUrl,
+                  micropostUrl: page.imageinfo[0].descriptionurl,
+                  micropost: cleanMicropost(title.replace(
+                        /(\.jpg|\.png|\.gif|\.webp)$/gi, '')),
+                  userProfileUrl: 'https://commons.wikimedia.org/wiki/User:' +
+                      page.imageinfo[0].user,
                   type: 'photo',
-                  timestamp: item.UploadDate * 1000,
-                  publicationDate: new Date(item.UploadDate * 1000),
+                  timestamp: (new Date(page.imageinfo[0].timestamp)).getTime(),
+                  publicationDate: page.imageinfo[0].timestamp,
                   socialInteractions: {
-                    likes: item.LikedVotes,
-                    shares: item.Grabs,
-                    comments: item.CommentCount,
-                    views: item.Views
+                    likes: null,
+                    shares: page.globalusage.length,
+                    comments: null,
+                    views: null
                   }
                 });
+              }
+              results.sort(function (a, b) {
+                return
+                    (a.socialInteractions.shares - b.socialInteractions.shares);
               });
+              collectResults(results, currentService, pendingRequests);
+            } else {
+              collectResults(results, currentService, pendingRequests);
             }
-            collectResults(results, currentService, pendingRequests);
           } catch(e) {
             collectResults(results, currentService, pendingRequests);
           }
