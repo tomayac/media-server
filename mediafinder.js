@@ -8,7 +8,9 @@ var URL = require('url');
 var Step = require('./step.js');
 var twitter = require('node-twitter');
 var env = require('node-env-file');
-env(__dirname + '/.env');
+if (require('fs').existsSync(__dirname + '/.env')) {
+  env(__dirname + '/.env');
+}
 
 var GLOBAL_config = {
   DEBUG: true,
@@ -1105,7 +1107,10 @@ var mediaFinder = {
                           .replace('thumbnail/', '')
                           .replace('/full', '');
                       var options = {
-                        url: 'http://twitpic.com/' + id + '/full'
+                        url: 'http://twitpic.com/' + id + '/full',
+                        headers: {
+                          'User-Agent': GLOBAL_config.HEADERS['User-Agent']
+                        }
                       };
                       (function(micropost, userProfileUrl, timestamp,
                           publicationDate) {
